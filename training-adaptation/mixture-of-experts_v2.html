@@ -1,0 +1,2316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/><meta content="width=device-width,initial-scale=1" name="viewport"/>
+<title>Mixture of Experts — AI Engineering &amp; Research Deep Dive</title>
+<link rel="stylesheet" href="../assets/style.css"/>
+</head>
+<body id="top">
+<div class="layout single">
+<main>
+<section class="chapter" data-category="Training &amp; Adaptation" id="t6">
+<div class="chapter-kicker">Training &amp; Adaptation · Chapter 06 / 101</div>
+<h1>Mixture of Experts (MoE)</h1>
+<p class="lede">A production-and-research treatment for engineers who already know ML, neural networks, and Transformer fundamentals. Each chapter splits into two pages: <strong>mechanism</strong> first, then systems, failure modes, and research reasoning.</p><div class="plain-bridge"><div class="plain-label">In plain English</div><p>Mixture of Experts lets us build a model with a <strong>huge number of parameters</strong> without making every token use all of those parameters.</p><p>A <strong>router</strong> looks at each token and decides which small number of <strong>expert networks</strong> should process it.</p></div>
+<div class="chapter-page">
+<div class="page-label">PAGE 1 · MECHANISM, MENTAL MODEL, THEORY</div>
+<h2>1. The Big Idea and Definition</h2>
+<h3>The Big Idea</h3>
+<p>Let's first forget all the mathematics.</p>
+<p>Imagine you have a company with many specialists:</p>
+<pre class="diagram">                 COMPANY
+                    │
+      ┌─────────────┼─────────────┐
+      ▼             ▼             ▼
+   Expert A      Expert B      Expert C
+  Mathematics     Code          Writing
+
+      ┌─────────────┬─────────────┐
+      ▼             ▼             ▼
+   Expert D      Expert E      Expert F
+    Science       Logic        Translation</pre>
+<p>Now a customer arrives with a question.</p>
+<p>You don't ask <strong>every specialist</strong> to solve it.</p>
+<p>Instead, a receptionist says:</p>
+<div class="case-note">"This question looks like mathematics + logic."</div>
+<p>So the receptionist sends it to:</p>
+<pre class="diagram">Question
+   │
+   ▼
+Router
+   │
+   ├────► Expert A
+   │
+   └────► Expert E</pre>
+<p>Only those experts do the work.</p>
+<p>That is the basic idea behind <strong>Mixture of Experts</strong>.</p>
+<h3>MoE in One Sentence</h3>
+<p>A useful definition is:</p>
+<div class="status"><strong>MoE is a sparsely activated conditional-computation architecture in which a router selects a small subset of expert parameter blocks for each token.</strong></div>
+<p>Let's translate that.</p>
+<pre class="diagram">Sparsely activated
+      ↓
+Only some experts run
+
+Conditional computation
+      ↓
+Different tokens can use different experts
+
+Expert parameter blocks
+      ↓
+Separate neural-network components</pre>
+<p>So the central idea is:</p>
+<div class="status"><strong>Huge model, but only a small part is activated for each token.</strong></div>
+<h2>2. Why Dense Models Hit a Wall</h2>
+<h3>Why Do We Need MoE?</h3>
+<p>Consider a normal dense model.</p>
+<p>Suppose it has:</p>
+<pre class="diagram">100 billion parameters</pre>
+<p>In a dense architecture, every token goes through the same full network.</p>
+<p>Conceptually:</p>
+<pre class="diagram">Token
+  │
+  ▼
+100B-parameter model
+  │
+  ▼
+All relevant parameters activated</pre>
+<p>So:</p>
+<pre class="diagram">More parameters
+        ↓
+More capacity
+        ↓
+More computation per token</pre>
+<p>The source describes this as the main limitation of dense models:</p>
+<div class="status"><strong>Parameter capacity and inference FLOPs scale together.</strong></div>
+<h3>The MoE Idea</h3>
+<p>Instead of one giant dense block:</p>
+<pre class="diagram">            GIANT DENSE NETWORK
+
+Token ─────────────────────►
+          ALL PARAMETERS</pre>
+<p>we create several expert networks:</p>
+<pre class="diagram">             MoE LAYER
+
+Token
+  │
+  ▼
+Router
+  │
+  ├────► Expert 1
+  ├────► Expert 2
+  ├────► Expert 3
+  ├────► Expert 4
+  ├────► Expert 5
+  └────► Expert 6</pre>
+<p>But the router activates only a small subset.</p>
+<p>For example:</p>
+<pre class="diagram">Token A → Expert 2 + Expert 5
+Token B → Expert 1 + Expert 4
+Token C → Expert 3 + Expert 6</pre>
+<p>So:</p>
+<pre class="diagram">Total parameters
+      ↑↑↑↑↑
+Huge
+
+Activated parameters per token
+      ↑↑
+Small</pre>
+<p>That is the main MoE advantage.</p>
+<h3>The Most Important Mental Model</h3>
+<p>Think of MoE as:</p>
+<pre class="diagram">           HUGE MODEL
+               │
+               ▼
+             ROUTER
+               │
+       ┌───────┼────────┐
+       ▼       ▼        ▼
+    Expert   Expert   Expert
+       │       │        │
+       └───────┼────────┘
+               ▼
+             Combine
+               │
+               ▼
+             Output</pre>
+<p>The router decides:</p>
+<div class="status"><strong>"Which experts should handle this token?"</strong></div>
+<h2>3. Intuition: Stories, Naming and Experts</h2>
+<div class="plain-bridge"><div class="plain-label">Layman Story: Hospital</div>
+<p>Imagine a huge hospital.</p>
+<p>It has:</p>
+<pre class="diagram">Cardiology
+Neurology
+Orthopedics
+Dermatology
+Oncology
+Radiology
+...</pre>
+<p>A patient arrives.</p>
+<p>You don't send the patient to every department.</p>
+<p>Instead:</p>
+<pre class="diagram">Patient
+   │
+   ▼
+Triage / Router
+   │
+   ├────► Cardiology
+   │
+   └────► Radiology</pre>
+<p>Only the relevant specialists get involved.</p>
+<p>That is a good mental model for MoE.</p>
+</div>
+<h3>Why This Is Called "Mixture of Experts"</h3>
+<p>Because the model contains multiple expert networks:</p>
+<pre class="diagram">Expert 1
+Expert 2
+Expert 3
+Expert 4
+...
+Expert N</pre>
+<p>But a token uses only some of them.</p>
+<pre class="diagram">Token
+  ↓
+Choose a mixture of experts
+  ↓
+Combine expert outputs</pre>
+<p>That is where the name comes from.</p>
+<h3>What Exactly Is an Expert?</h3>
+<p>An expert is a parameter block that can process the token representation.</p>
+<p>In Transformer-based MoE systems, these expert blocks are commonly associated with feed-forward transformations.</p>
+<p>Conceptually:</p>
+<pre class="diagram">Token representation
+       │
+       ▼
+    Expert
+       │
+       ▼
+Transformed representation</pre>
+<p>If there are many experts:</p>
+<pre class="diagram">Expert 1 → FFN
+Expert 2 → FFN
+Expert 3 → FFN
+...
+Expert N → FFN</pre>
+<p>The router decides which one(s) to use.</p>
+<h2>4. Dense Model vs MoE and the Core Trade-Off</h2>
+<h3>Dense Model vs MoE</h3>
+<p>This comparison is fundamental.</p>
+<p><strong>Dense model</strong></p>
+<pre class="diagram">Token
+  │
+  ▼
+All model parameters
+  │
+  ▼
+Output</pre>
+<p><strong>MoE model</strong></p>
+<pre class="diagram">Token
+  │
+  ▼
+Router
+  │
+  ├────► Expert A
+  └────► Expert D
+          │
+          ▼
+       Combine
+          │
+          ▼
+        Output</pre>
+<p>So:</p>
+<pre class="diagram">Dense:
+All parameters activated
+
+MoE:
+Only selected experts activated</pre>
+<h3>The Core Trade-Off</h3>
+<p>This is the fundamental MoE idea:</p>
+<pre class="diagram">              MoE
+
+Total parameter capacity
+          ↑↑↑↑↑↑↑
+          HUGE
+
+Per-token computation
+          ↑↑
+        SMALLER</pre>
+<p>So MoE tries to separate:</p>
+<pre class="diagram">Parameter count
+        from
+Per-token compute</pre>
+<p>The source explicitly describes this as:</p>
+<div class="status"><strong>MoE separates parameter count from per-token compute.</strong></div>
+<div class="plain-bridge"><div class="plain-label">Layman Story: A Company With Specialists</div>
+<p>Imagine a company with:</p>
+<pre class="diagram">1,000 specialists</pre>
+<p>But each customer request usually needs only:</p>
+<pre class="diagram">2 specialists</pre>
+<p>So the company has enormous <strong>total expertise</strong>, but each request only uses a small portion.</p>
+<p>That is exactly the intuition of sparse activation.</p>
+</div>
+<h2>5. The Router and Top-k Selection</h2>
+<h3>The Router</h3>
+<p>The router is one of the most important components.</p>
+<p>Its job is:</p>
+<pre class="diagram">Token
+  │
+  ▼
+Router
+  │
+  ▼
+Score experts
+  │
+  ▼
+Choose experts</pre>
+<p>For each token, conceptually:</p>
+<pre class="diagram">Expert 1 → 0.10
+Expert 2 → 0.62
+Expert 3 → 0.04
+Expert 4 → 0.18
+Expert 5 → 0.06</pre>
+<p>The router might then select:</p>
+<pre class="diagram">Expert 2
+Expert 4</pre>
+<p>if using top-2 routing.</p>
+<p>The source explicitly describes the core pipeline as:</p>
+<div class="status"><strong>Router logits → top-k experts → capacity routing → combine.</strong></div>
+<h3>Step 1 — Router Scores the Experts</h3>
+<p>Suppose there are four experts:</p>
+<pre class="diagram">Expert A
+Expert B
+Expert C
+Expert D</pre>
+<p>For one token:</p>
+<pre class="diagram">               Router
+
+Token ─────────►
+
+A → 0.12
+B → 0.57
+C → 0.08
+D → 0.23</pre>
+<p>The router is effectively saying:</p>
+<pre class="diagram">B looks most relevant
+D looks second most relevant</pre>
+<p>The scores are the router's preference over experts.</p>
+<h3>Step 2 — Top-k Selection</h3>
+<p>Now choose only the best few experts.</p>
+<p>If:</p>
+<pre class="diagram">k = 2</pre>
+<p>then select:</p>
+<pre class="diagram">Top 2:
+B
+D</pre>
+<p>So:</p>
+<pre class="diagram">Token
+  │
+  ▼
+Router
+  │
+  ├──► Expert B
+  └──► Expert D</pre>
+<p>This is called <strong>top-k routing</strong>.</p>
+<h3>Why "Top-k"?</h3>
+<p>Because we don't want:</p>
+<pre class="diagram">Token
+  ↓
+Every expert</pre>
+<p>We want:</p>
+<pre class="diagram">Token
+  ↓
+Small number of experts</pre>
+<p>For example:</p>
+<pre class="diagram">100 experts total
+k = 2</pre>
+<p>Then:</p>
+<pre class="diagram">100 possible experts
+2 actually selected</pre>
+<p>That is sparse computation.</p>
+<h2>6. Dispatch and All-to-All Communication</h2>
+<h3>Step 3 — Dispatch the Token</h3>
+<p>Once the experts are selected, the token needs to be sent to them.</p>
+<p>Conceptually:</p>
+<pre class="diagram">Token
+  │
+  ▼
+Router
+  │
+  ├────► Expert B
+  │
+  └────► Expert D</pre>
+<p>But in a distributed system:</p>
+<pre class="diagram">Expert B may live on GPU 2
+Expert D may live on GPU 7</pre>
+<p>So the token may need to move between devices.</p>
+<p>This is where the major systems problem appears.</p>
+<h3>All-to-All Communication</h3>
+<p>Suppose we have:</p>
+<pre class="diagram">GPU 1 → Experts A, B
+GPU 2 → Experts C, D
+GPU 3 → Experts E, F
+GPU 4 → Experts G, H</pre>
+<p>Tokens arriving at each GPU may need to be sent to different GPUs.</p>
+<p>Conceptually:</p>
+<pre class="diagram">GPU 1 ─────┬────────► GPU 2
+           ├────────► GPU 3
+           └────────► GPU 4
+
+GPU 2 ─────┬────────► GPU 1
+           ├────────► GPU 3
+           └────────► GPU 4</pre>
+<p>This pattern is known as <strong>all-to-all communication</strong>.</p>
+<p>The source identifies it as one of the main practical bottlenecks.</p>
+<div class="plain-bridge"><div class="plain-label">Layman Story: Airport Baggage</div>
+<p>Imagine thousands of bags arriving at an airport.</p>
+<p>Each bag has a destination:</p>
+<pre class="diagram">Bag A → London
+Bag B → Delhi
+Bag C → Tokyo
+Bag D → Paris</pre>
+<p>You first sort the bags:</p>
+<pre class="diagram">Incoming bags
+      ↓
+Sorting system
+      ↓
+Different destinations</pre>
+<p>Then the airport has to physically move them to different locations.</p>
+<p>The sorting itself may be fast.</p>
+<p>The movement can become the bottleneck.</p>
+<p>That's a useful intuition for MoE routing.</p>
+</div>
+<h2>7. Expert Computation, Combining and the Full Pipeline</h2>
+<h3>Step 4 — Expert Computation</h3>
+<p>Once tokens reach the selected experts:</p>
+<pre class="diagram">Expert A
+   ↓
+FFN
+   ↓
+Output A
+
+Expert B
+   ↓
+FFN
+   ↓
+Output B</pre>
+<p>Now each selected expert processes the token.</p>
+<h3>Step 5 — Combine the Expert Outputs</h3>
+<p>The source gives the simplified equation:</p>
+<div class="formula">y = Σₑ∈TopK gₑ(x) Eₑ(x)</div>
+<p>Let's translate that.</p>
+<pre class="diagram">Expert output
+      ×
+Router weight
+      ↓
+Weighted contribution</pre>
+<p>Then:</p>
+<pre class="diagram">Contribution from Expert B
+        +
+Contribution from Expert D
+        ↓
+Final MoE output</pre>
+<h3>Example of Combining Outputs</h3>
+<p>Suppose:</p>
+<pre class="diagram">Expert B weight = 0.7
+Expert D weight = 0.3</pre>
+<p>Then conceptually:</p>
+<pre class="diagram">Output
+=
+0.7 × ExpertB(token)
++
+0.3 × ExpertD(token)</pre>
+<p>The exact implementation can have additional details, but the important intuition is:</p>
+<div class="status"><strong>The router doesn't just choose experts; its routing weights can determine how much each selected expert contributes.</strong></div>
+<h3>The Entire MoE Pipeline</h3>
+<p>Memorize this:</p>
+<pre class="diagram">                     INPUT TOKEN
+                          │
+                          ▼
+                        ROUTER
+                          │
+                    Score experts
+                          │
+                          ▼
+                       Top-k
+                          │
+                          ▼
+                     Dispatch
+                          │
+                 ┌────────┴────────┐
+                 ▼                 ▼
+             Expert A          Expert B
+                 │                 │
+                 ▼                 ▼
+                FFN               FFN
+                 │                 │
+                 └────────┬────────┘
+                          ▼
+                       Combine
+                          │
+                          ▼
+                        OUTPUT</pre>
+<p>That is the basic MoE mechanism.</p>
+<h2>8. Why Sparsity Pays Off, and the Catch</h2>
+<h3>Why Not Send Every Token to Every Expert?</h3>
+<p>Because then we lose the main advantage.</p>
+<p>If:</p>
+<pre class="diagram">100 experts</pre>
+<p>and every token uses:</p>
+<pre class="diagram">100 experts</pre>
+<p>then:</p>
+<pre class="diagram">Sparse computation
+       ↓
+gone</pre>
+<p>We are effectively back toward dense computation.</p>
+<p>MoE works because:</p>
+<pre class="diagram">Total experts = many
+
+Experts activated per token = few</pre>
+<h3>The Main Advantage of MoE</h3>
+<p>Suppose:</p>
+<pre class="diagram">64 experts</pre>
+<p>and each token uses:</p>
+<pre class="diagram">2 experts</pre>
+<p>Then the model can contain a very large total parameter capacity while activating only a fraction for each token.</p>
+<p>Conceptually:</p>
+<pre class="diagram">Total capacity
+████████████████████████████████
+
+Activated per token
+█</pre>
+<p>That is the fundamental value proposition.</p>
+<h3>But There Is a Catch</h3>
+<p>MoE does not make complexity disappear.</p>
+<p>It changes the problem.</p>
+<p>The source says:</p>
+<div class="status"><strong>MoE replaces dense arithmetic with a routing and distributed-systems problem.</strong></div>
+<p>So:</p>
+<pre class="diagram">Dense model
+   ↓
+Heavy arithmetic
+
+MoE
+   ↓
+Less arithmetic per token
+   +
+Routing
+   +
+Communication
+   +
+Load balancing</pre>
+<p>This is the core systems trade-off.</p>
+<h2>9. Expert Imbalance, Stragglers and Capacity</h2>
+<h3>The New Bottleneck: Expert Imbalance</h3>
+<p>Suppose we have four experts:</p>
+<pre class="diagram">Expert A → 25% tokens
+Expert B → 25% tokens
+Expert C → 25% tokens
+Expert D → 25% tokens</pre>
+<p>That's nicely balanced.</p>
+<p>But imagine:</p>
+<pre class="diagram">Expert A → 70%
+Expert B → 10%
+Expert C → 10%
+Expert D → 10%</pre>
+<p>Now Expert A is overloaded.</p>
+<pre class="diagram">Expert A
+████████████████████████
+
+Expert B
+████
+
+Expert C
+████
+
+Expert D
+████</pre>
+<p>The system cannot finish the batch until the slow path catches up.</p>
+<p>That is <strong>expert imbalance</strong>.</p>
+<div class="plain-bridge"><div class="plain-label">Layman Story: Checkout Counters</div>
+<p>Imagine a supermarket with four checkout counters.</p>
+<pre class="diagram">Counter A
+Counter B
+Counter C
+Counter D</pre>
+<p>Customers should be distributed reasonably:</p>
+<pre class="diagram">A → 25 customers
+B → 25
+C → 25
+D → 25</pre>
+<p>But if:</p>
+<pre class="diagram">A → 80 customers
+B → 7
+C → 7
+D → 6</pre>
+<p>then Counter A becomes the bottleneck.</p>
+<p>Even though the supermarket has enough total checkout capacity.</p>
+<p>That's exactly the intuition behind expert imbalance.</p>
+</div>
+<h3>Why Expert Imbalance Hurts p99</h3>
+<p>Suppose a batch has many tokens.</p>
+<p>Most tokens finish quickly:</p>
+<pre class="diagram">Expert B → done
+Expert C → done
+Expert D → done</pre>
+<p>But one overloaded expert is still processing:</p>
+<pre class="diagram">Expert A → STILL WORKING</pre>
+<p>The whole batch may have to wait.</p>
+<p>So:</p>
+<pre class="diagram">One overloaded expert
+        ↓
+Straggler
+        ↓
+Batch waits
+        ↓
+Tail latency increases</pre>
+<p>The source explicitly notes that a high-capacity MoE can have poor tail latency because one overloaded expert or communication path can gate the whole batch.</p>
+<h3>Straggler Experts</h3>
+<p>A <strong>straggler</strong> is an expert that takes longer than the others.</p>
+<p>Conceptually:</p>
+<pre class="diagram">Expert A → 10 ms
+Expert B → 11 ms
+Expert C → 10 ms
+Expert D → 80 ms  ← straggler</pre>
+<p>Then the effective step can be limited by:</p>
+<pre class="diagram">80 ms</pre>
+<p>not:</p>
+<pre class="diagram">10 ms</pre>
+<p>This is why the source recommends measuring expert load and communication separately.</p>
+<h3>Token Capacity</h3>
+<p>Experts also have capacity constraints.</p>
+<p>Conceptually:</p>
+<pre class="diagram">Expert
+   │
+   ▼
+Can handle up to X tokens</pre>
+<p>But the router may send:</p>
+<pre class="diagram">X + many extra tokens</pre>
+<p>Now you have a capacity problem.</p>
+<p>Possible consequences include:</p>
+<pre class="diagram">Drop
+Queue
+Re-route
+Delay</pre>
+<p>The source's Switch Transformer case study explicitly mentions <strong>expert-capacity failures</strong> and <strong>dropped/queued tokens</strong>.</p>
+<h3>Dropped Tokens</h3>
+<p>A simple mental model:</p>
+<pre class="diagram">Expert capacity = 100 tokens
+
+Router sends = 130 tokens
+
+                  ↓
+
+100 can be processed
+30 exceed capacity</pre>
+<p>The system then needs a strategy for those extra tokens.</p>
+<p>Depending on the architecture, that can involve capacity controls or other routing behavior.</p>
+<p>The important point is:</p>
+<div class="status"><strong>Sparse routing creates a new capacity-management problem.</strong></div>
+<h2>10. Load Balancing and Routing Trade-Offs</h2>
+<h3>Load Balancing</h3>
+<p>To prevent one expert from receiving too many tokens, systems use <strong>load-balancing mechanisms/objectives</strong>.</p>
+<p>Conceptually:</p>
+<pre class="diagram">Router
+  │
+  ├── Expert A → overloaded
+  │
+  ├── Expert B → underused
+  │
+  ▼
+Load balancing pressure
+  │
+  ▼
+More even routing</pre>
+<p>The source recommends using token routing with <strong>load-balancing objectives and capacity management</strong>.</p>
+<h3>The Routing Trade-Off</h3>
+<p>Perfect routing would ideally choose:</p>
+<pre class="diagram">Best expert for quality</pre>
+<p>But pure quality-based routing might create:</p>
+<pre class="diagram">Expert imbalance</pre>
+<p>So you have a trade-off:</p>
+<pre class="diagram">Quality-oriented routing
+         ⇅
+Load-balanced routing</pre>
+<p>You need both good specialization and manageable system behavior.</p>
+<h3>The Main Production Tension</h3>
+<p>Think:</p>
+<pre class="diagram">Better specialization
+      ↓
+Maybe router concentrates tokens
+      ↓
+Expert imbalance
+      ↓
+Communication / capacity problems</pre>
+<p>while:</p>
+<pre class="diagram">Stronger balancing
+      ↓
+Better hardware utilization
+      ↓
+But possibly different expert assignment</pre>
+<p>So routing is both a <strong>modeling decision</strong> and a <strong>systems decision</strong>.</p>
+<h3>All-to-All Communication + Load Balance</h3>
+<p>These two problems are connected:</p>
+<pre class="diagram">Router
+  ↓
+Different tokens choose different experts
+  ↓
+Tokens must move to different devices
+  ↓
+All-to-all communication</pre>
+<p>Meanwhile:</p>
+<pre class="diagram">Bad routing distribution
+  ↓
+Some experts overloaded
+  ↓
+Stragglers</pre>
+<p>So:</p>
+<pre class="diagram">MoE system
+   │
+   ├── Communication
+   └── Load balancing</pre>
+<p>are first-class concerns.</p>
+</div>
+<div class="chapter-page">
+<div class="page-label">PAGE 2 · PRODUCTION, TRADE-OFFS, INTERVIEW REASONING</div>
+<h2>11. Measuring MoE, Topology and Scaling</h2>
+<h3>What Should You Measure?</h3>
+<p>The source gives a very practical production starting point:</p>
+<div class="status"><strong>Measure tokens per expert, dropped tokens, dispatch traffic and straggler experts. Co-design routing with topology.</strong></div>
+<p>Visualize:</p>
+<pre class="diagram">               MoE Dashboard
+
+Tokens / Expert
+A ████████████
+B █████
+C ███████
+D █████████
+
+Dropped tokens
+████
+
+Dispatch traffic
+████████████
+
+Stragglers
+A few slow experts</pre>
+<p>The exact dashboard depends on the implementation.</p>
+<h3>Why Topology Matters</h3>
+<p>Suppose:</p>
+<pre class="diagram">Expert A → GPU 1
+Expert B → GPU 2</pre>
+<p>and the GPUs are connected with:</p>
+<pre class="diagram">Very fast link</pre>
+<p>Great.</p>
+<p>But if another expert requires:</p>
+<pre class="diagram">Slow cross-device network</pre>
+<p>then routing can become expensive.</p>
+<p>So:</p>
+<div class="status"><strong>Routing should consider the hardware topology, not only model quality.</strong></div>
+<p>The source explicitly recommends co-designing routing with topology.</p>
+<div class="plain-bridge"><div class="plain-label">Layman Story: Warehouse Locations</div>
+<p>Imagine a warehouse with specialists.</p>
+<pre class="diagram">Building A → Experts 1–10
+Building B → Experts 11–20
+Building C → Experts 21–30</pre>
+<p>If the router constantly sends items across buildings:</p>
+<pre class="diagram">Item
+ ↓
+Building A
+ ↓
+Move to Building C
+ ↓
+Process
+ ↓
+Move back</pre>
+<p>you spend a lot of time transporting items.</p>
+<p>A good routing policy considers:</p>
+<pre class="diagram">Who is best?
++
+Who is nearby?
++
+Who has capacity?</pre>
+<p>That's a useful systems intuition.</p>
+</div>
+<h3>MoE Scaling</h3>
+<p>The source says the practical question is:</p>
+<div class="case-note">At what workload size, concurrency, model size, or other scaling variable does <strong>all-to-all communication and expert imbalance</strong> become the first saturated resource?</div>
+<p>So:</p>
+<pre class="diagram">More tokens
+     ↓
+More routing
+     ↓
+More dispatch
+     ↓
+More communication
+     ↓
+More expert load
+     ↓
+Potential saturation</pre>
+<h3>Why Raw FLOPs Aren't Enough</h3>
+<p>Suppose an MoE system reports:</p>
+<pre class="diagram">Low activated FLOPs</pre>
+<p>That sounds excellent.</p>
+<p>But actual performance may be poor because:</p>
+<pre class="diagram">Communication
+      ↑
+Expert imbalance
+      ↑
+Stragglers</pre>
+<p>So:</p>
+<div class="status"><strong>Low FLOPs does not automatically mean low latency.</strong></div>
+<p>This is a key engineering lesson from the source.</p>
+<h3>Measure Expert Load Separately</h3>
+<p>The source explicitly recommends:</p>
+<div class="status"><strong>Measure expert load and all-to-all time separately from aggregate TFLOPs.</strong></div>
+<p>So instead of only:</p>
+<pre class="diagram">Total TFLOPs</pre>
+<p>measure:</p>
+<pre class="diagram">Tokens/expert
+All-to-all time
+Dropped tokens
+Straggler time</pre>
+<p>This tells you where the actual problem is.</p>
+<h2>12. Dense vs MoE, Trade-Offs and Free Parameters</h2>
+<h3>Dense vs MoE — The Deeper Difference</h3>
+<p>Dense:</p>
+<pre class="diagram">More capacity
+     ↓
+More computation per token</pre>
+<p>MoE:</p>
+<pre class="diagram">More total capacity
+     ↓
+Only selected experts compute
+     ↓
+But routing becomes complex</pre>
+<p>So:</p>
+<pre class="diagram">Dense:
+Compute-heavy
+
+MoE:
+Routing + communication-heavy</pre>
+<p>Not always, but that is the central systems intuition.</p>
+<h3>The Main MoE Trade-Off</h3>
+<p>You can remember it as:</p>
+<pre class="diagram">More parameters per FLOP
+          ⇅
+More systems complexity</pre>
+<p>The source uses essentially this trade-off in its interview framing.</p>
+<h3>MoE Is Not "Free Parameters"</h3>
+<p>A common misconception is:</p>
+<div class="case-note">"We can add unlimited parameters because only a few are active."</div>
+<p>Not exactly.</p>
+<p>Adding experts introduces:</p>
+<pre class="diagram">Routing overhead
+Communication
+Memory for experts
+Load balancing
+Capacity management
+Distributed execution</pre>
+<p>So the total system still becomes more complicated.</p>
+<div class="plain-bridge"><div class="plain-label">Layman Story: Restaurant Kitchen</div>
+<p>Imagine a restaurant with:</p>
+<pre class="diagram">50 chefs</pre>
+<p>but each order is assigned to:</p>
+<pre class="diagram">2 chefs</pre>
+<p>Great.</p>
+<p>But now orders have to be sent:</p>
+<pre class="diagram">Reception
+   ↓
+Correct chef
+   ↓
+Correct kitchen station</pre>
+<p>If 80% of orders all go to one chef:</p>
+<pre class="diagram">Chef A → overloaded</pre>
+<p>the restaurant still becomes slow.</p>
+<p>So:</p>
+<div class="status"><strong>Having many specialists does not guarantee fast service. Good routing matters.</strong></div>
+</div>
+<h2>13. Research Background and Evidence</h2>
+<h3>The Switch Transformer Idea</h3>
+<p>The source cites:</p>
+<div class="status"><strong>Switch Transformers — Fedus, Zoph, Shazeer · 2021</strong>.</div>
+<p>The key idea highlighted is:</p>
+<div class="status"><strong>Simplified sparse routing with top-1 expert selection at very large scale.</strong></div>
+<p>So instead of:</p>
+<pre class="diagram">Top-2</pre>
+<p>you can use:</p>
+<pre class="diagram">Top-1</pre>
+<p>Meaning:</p>
+<pre class="diagram">Token
+  ↓
+Router
+  ↓
+Choose one expert
+  ↓
+Process</pre>
+<p>This can simplify routing.</p>
+<h3>Why Top-1 Routing Is Attractive</h3>
+<p>Compare:</p>
+<p><strong>Top-2</strong></p>
+<pre class="diagram">Token
+ ├──► Expert A
+ └──► Expert B</pre>
+<p><strong>Top-1</strong></p>
+<pre class="diagram">Token
+ └──► Expert A</pre>
+<p>Top-1 can reduce routing and communication complexity.</p>
+<p>But expert capacity and imbalance still remain important.</p>
+<p>The source explicitly says this.</p>
+<h3>Research Background — Outrageously Large Neural Networks</h3>
+<p>The source cites:</p>
+<div class="status"><strong>Outrageously Large Neural Networks — Shazeer et al., 2017</strong>.</div>
+<p>The contribution highlighted is:</p>
+<div class="status"><strong>Sparse conditional computation with learned routing to experts.</strong></div>
+<p>The important historical progression is:</p>
+<pre class="diagram">Need more model capacity
+        ↓
+Dense computation is expensive
+        ↓
+Use sparse experts
+        ↓
+Learn which expert handles each token</pre>
+<h3>Research Evolution</h3>
+<p>The broad story is:</p>
+<pre class="diagram">Sparse expert idea
+      ↓
+Learned routing
+      ↓
+Larger expert models
+      ↓
+Simpler routing
+      ↓
+Distributed MoE systems</pre>
+<p>And the central problem changes from:</p>
+<pre class="diagram">"How do we make the model larger?"</pre>
+<p>to:</p>
+<pre class="diagram">"How do we route efficiently?"</pre>
+<h3>Research Results Are Conditional</h3>
+<p>As with the earlier chapters, don't think:</p>
+<pre class="diagram">Paper says:
+"MoE improves efficiency."
+
+Therefore:
+MoE is always efficient.</pre>
+<p>Instead ask:</p>
+<pre class="diagram">Which model?
+
+Which dataset?
+
+Which number of experts?
+
+Which routing strategy?
+
+Which hardware?
+
+Which communication topology?
+
+Which metric?</pre>
+<p>The source explicitly says empirical results should be treated as conditional on model family, dataset, scale, metric and hardware.</p>
+<h3>Three Types of Evidence</h3>
+<p>Keep the same framework:</p>
+<table><thead><tr><th>Evidence</th><th>Question</th></tr></thead><tbody><tr><td><strong>Theoretical</strong></td><td>What follows from the formulation?</td></tr><tr><td><strong>Empirical</strong></td><td>Where was the effect measured?</td></tr><tr><td><strong>Engineering heuristic</strong></td><td>Under which workload and hardware assumptions is it useful?</td></tr></tbody></table>
+<p>For MoE:</p>
+<pre class="diagram">"Top-1 routing is better."</pre>
+<p>is incomplete.</p>
+<p>Ask:</p>
+<pre class="diagram">Better for what?
+
+Latency?
+Quality?
+Communication?
+Capacity?
+Memory?</pre>
+<h2>14. Production Architecture and Failure Modes</h2>
+<h3>Why "Sparse" Doesn't Mean "Simple"</h3>
+<p>You might think:</p>
+<pre class="diagram">Fewer FLOPs
+     ↓
+Simpler system</pre>
+<p>But actually:</p>
+<pre class="diagram">Fewer activated FLOPs
+       +
+Routing
+       +
+Communication
+       +
+Load balancing
+       +
+Capacity
+       +
+Distributed synchronization</pre>
+<p>So sparse computation can create a more complicated runtime.</p>
+<h3>MoE and Distributed Systems</h3>
+<p>This is where MoE becomes especially interesting for an AI systems engineer.</p>
+<p>The architecture naturally creates:</p>
+<pre class="diagram">Routing decisions
+      ↓
+Distributed token movement
+      ↓
+Expert computation
+      ↓
+Synchronization</pre>
+<p>So:</p>
+<pre class="diagram">ML architecture
+      +
+Distributed systems</pre>
+<p>become tightly connected.</p>
+<p>This is why the source describes MoE as a routing and distributed-systems problem.</p>
+<h3>The Production Architecture</h3>
+<p>A simplified online path is:</p>
+<pre class="diagram">REQUEST
+   │
+   ▼
+Validate / Admit
+   │
+   ▼
+MoE Router
+   │
+   ▼
+Top-k Selection
+   │
+   ▼
+Dispatch
+   │
+   ▼
+All-to-All Communication
+   │
+   ▼
+Expert FFNs
+   │
+   ▼
+Combine Results
+   │
+   ▼
+Response
+   │
+   ▼
+Telemetry</pre>
+<p>This mirrors the source's online production framing.</p>
+<h3>Offline / Async Path</h3>
+<p>The source gives the general pattern:</p>
+<pre class="diagram">Data / artifacts
+      ↓
+Version + validate
+      ↓
+Build / train / index
+      ↓
+Evaluate + promote</pre>
+<p>For MoE, conceptually:</p>
+<pre class="diagram">Training data
+     ↓
+Train router + experts
+     ↓
+Measure expert balance
+     ↓
+Measure communication
+     ↓
+Evaluate quality
+     ↓
+Promote</pre>
+<h3>Production State Management</h3>
+<p>The source gives four general operational rules:</p>
+<pre class="diagram">1. Keep durable state behind explicit ownership boundaries.
+2. Make workers independently replaceable.
+3. Version caches and artifacts.
+4. Isolate slow or failure-prone dependencies behind
+   queues, deadlines, and budgets.</pre>
+<p>For MoE this is especially useful because expert workers may be distributed across machines.</p>
+<h3>Expert Ownership</h3>
+<p>Imagine:</p>
+<pre class="diagram">GPU 1 → Experts A, B
+GPU 2 → Experts C, D
+GPU 3 → Experts E, F</pre>
+<p>You want clear ownership:</p>
+<pre class="diagram">GPU 1 owns A/B
+GPU 2 owns C/D
+GPU 3 owns E/F</pre>
+<p>Then you can reason about:</p>
+<pre class="diagram">Traffic
+Capacity
+Failures
+Replacement
+Scaling</pre>
+<h3>Independently Replaceable Expert Workers</h3>
+<p>Suppose Expert D has a problem.</p>
+<p>A good distributed system lets you replace:</p>
+<pre class="diagram">Expert D
+   ↓
+New Expert D</pre>
+<p>without redesigning the entire MoE model.</p>
+<p>This is where the source's worker-replacement principle becomes useful.</p>
+<h3>Versioning Expert Artifacts</h3>
+<p>Think:</p>
+<pre class="diagram">Model v3
+Experts v3
+Router v3</pre>
+<p>rather than:</p>
+<pre class="diagram">Model = latest
+Router = latest
+Experts = whatever is deployed</pre>
+<p>Because routing and expert weights need to remain compatible.</p>
+<p>The source generally emphasizes versioning caches and artifacts in production.</p>
+<h3>What Usually Goes Wrong?</h3>
+<p>The source identifies three broad production failure patterns.</p>
+<p><strong>Failure 1 — Quality or Correctness Regression</strong></p>
+<p>A high-capacity MoE may show poor behavior because:</p>
+<pre class="diagram">One expert gets overloaded
+      +
+Communication path gets overloaded
+      ↓
+Tail behavior becomes poor</pre>
+<p>The source explicitly identifies overloaded experts and communication paths as mechanisms that can gate a whole batch.</p>
+<h3>Failure 2 — p99 / Capacity Collapse</h3>
+<p>The major mechanisms are:</p>
+<pre class="diagram">All-to-all communication
++
+Expert imbalance</pre>
+<p>The chain:</p>
+<pre class="diagram">More load
+    ↓
+More routing
+    ↓
+More communication
+    ↓
+Expert imbalance
+    ↓
+Stragglers
+    ↓
+Queueing
+    ↓
+p99 increases</pre>
+<h3>Failure 3 — Offline Good, Online Bad</h3>
+<p>Suppose:</p>
+<pre class="diagram">Offline benchmark:
+excellent</pre>
+<p>but production has:</p>
+<pre class="diagram">Different traffic
+Different sequence lengths
+Different concurrency
+Different topology
+Different expert load</pre>
+<p>Then:</p>
+<pre class="diagram">Offline behavior
+       ≠
+Production behavior</pre>
+<p>The source recommends comparing production traces with evaluation slices.</p>
+<h3>Why p99 Matters More in MoE</h3>
+<p>MoE is particularly sensitive to stragglers.</p>
+<p>Imagine:</p>
+<pre class="diagram">Expert A → 10 ms
+Expert B → 11 ms
+Expert C → 12 ms
+Expert D → 60 ms</pre>
+<p>The system may effectively wait for Expert D.</p>
+<p>So:</p>
+<pre class="diagram">One bad expert
+      ↓
+Batch waits
+      ↓
+Tail latency rises</pre>
+<p>This is why the source emphasizes <strong>straggler experts</strong> as something to measure.</p>
+<h2>15. Trade-Offs, Misunderstandings, Metrics and Debugging</h2>
+<h3>The Main MoE Trade-Off</h3>
+<p>Think:</p>
+<pre class="diagram">                   MoE
+                    │
+        ┌───────────┴───────────┐
+        ▼                       ▼
+Huge parameter capacity     Sparse compute
+        │                       │
+        └───────────┬───────────┘
+                    ▼
+               But...
+                    │
+        ┌───────────┼───────────┐
+        ▼           ▼           ▼
+    Routing     Communication  Balance
+        │           │           │
+        └───────────┼───────────┘
+                    ▼
+             Systems complexity</pre>
+<p>This is the essence of MoE.</p>
+<h3>Common Misunderstanding #1</h3>
+<p><strong>Misconception:</strong> "MoE means the model uses fewer parameters."<br/><strong>Reality:</strong> The total parameter count can be very large.</p>
+<p>The key is:</p>
+<pre class="diagram">Total parameters
+       ≠
+Parameters activated per token</pre>
+<p>MoE tries to make the second much smaller than the first.</p>
+<h3>Common Misunderstanding #2</h3>
+<p><strong>Misconception:</strong> "MoE removes computation cost."<br/><strong>Reality:</strong> It reduces <strong>activated dense computation per token</strong>, but introduces:</p>
+<pre class="diagram">Routing
+Communication
+Load balancing
+Capacity management</pre>
+<p>So the cost moves.</p>
+<h3>Common Misunderstanding #3</h3>
+<p><strong>Misconception:</strong> "More experts automatically make the model better."<br/><strong>Reality:</strong> More experts can increase total capacity, but may also increase:</p>
+<pre class="diagram">Routing complexity
+Memory
+Communication
+Load-balancing difficulty</pre>
+<p>The source emphasizes that more resources can have diminishing or negative operational returns.</p>
+<h3>Common Misunderstanding #4</h3>
+<p><strong>Misconception:</strong> "Low FLOPs means low latency."<br/><strong>Reality:</strong> You can have:</p>
+<pre class="diagram">Low activated FLOPs
++
+Very expensive all-to-all communication</pre>
+<p>and still get poor latency.</p>
+<p>The source explicitly recommends measuring all-to-all time separately from aggregate TFLOPs.</p>
+<h3>Common Misunderstanding #5</h3>
+<p><strong>Misconception:</strong> "If routing picks the best expert, the system is optimal."<br/><strong>Reality:</strong> A routing decision has at least two objectives:</p>
+<pre class="diagram">Model quality
++
+System efficiency</pre>
+<p>A router that sends everything to one highly useful expert may create:</p>
+<pre class="diagram">Overload</pre>
+<p>So routing quality and load balance need to be considered together.</p>
+<h3>Common Misunderstanding #6</h3>
+<p><strong>Misconception:</strong> "A prototype MoE architecture is a production MoE system."<br/><strong>Reality:</strong> Production requires:</p>
+<pre class="diagram">Versioning
+Observability
+Isolation
+Rollback
+Evaluation
+State ownership</pre>
+<p>And MoE additionally needs:</p>
+<pre class="diagram">Expert load monitoring
+Dispatch monitoring
+Capacity monitoring
+Communication monitoring</pre>
+<h3>The Point Where MoE Starts to Hurt</h3>
+<p>The source gives the key idea:</p>
+<div class="case-note">The system appears scalable because the visible metric improves, but the real bottleneck becomes <strong>all-to-all communication and expert imbalance</strong>.</div>
+<p>Visualize:</p>
+<pre class="diagram">Model capacity ↑
+      ↓
+Activated compute stays relatively sparse
+      ↓
+Looks efficient
+      ↓
+But token routing increases
+      ↓
+Communication increases
+      ↓
+Expert imbalance increases
+      ↓
+Tail latency / capacity suffers</pre>
+<h3>The Production Question You Should Ask</h3>
+<p>Don't ask:</p>
+<div class="status"><strong>"How many FLOPs does MoE use?"</strong></div>
+<p>Ask:</p>
+<div class="status"><strong>"Where are the tokens going, how evenly are they distributed, and how much time are we spending moving them?"</strong></div>
+<p>That is much closer to the real production problem.</p>
+<h3>The Key MoE Metrics</h3>
+<p>A production MoE dashboard should include:</p>
+<pre class="diagram">                 MOE METRICS
+
+Routing
+ ├── Top-k choices
+ ├── Router distribution
+ └── Routing entropy / skew
+
+Experts
+ ├── Tokens per expert
+ ├── Capacity utilization
+ ├── Dropped tokens
+ └── Straggler duration
+
+Communication
+ ├── Dispatch traffic
+ ├── All-to-all time
+ └── Cross-device traffic
+
+System
+ ├── p50
+ ├── p95
+ ├── p99
+ └── Throughput</pre>
+<p>The source specifically highlights tokens per expert, dropped tokens, dispatch traffic, stragglers, and all-to-all time.</p>
+<h3>A Good MoE Debugging Flow</h3>
+<p>Suppose latency becomes bad.</p>
+<p>Don't immediately blame the model.</p>
+<p>Do:</p>
+<pre class="diagram">Latency increased
+      ↓
+Check all-to-all time
+      ↓
+Check expert load distribution
+      ↓
+Check dropped tokens
+      ↓
+Check straggler experts
+      ↓
+Check topology
+      ↓
+Check router behavior</pre>
+<p>This is a better production debugging process.</p>
+<h3>MoE and Hardware Topology</h3>
+<p>Imagine:</p>
+<pre class="diagram">GPU 1 ─── fast ─── GPU 2
+
+GPU 1 ─── slow ─── GPU 8</pre>
+<p>If routing repeatedly sends tokens from:</p>
+<pre class="diagram">GPU 1 → GPU 8</pre>
+<p>you may spend a lot of time communicating.</p>
+<p>So expert placement matters.</p>
+<pre class="diagram">Routing
+   +
+Expert placement
+   +
+Network topology</pre>
+<p>should be designed together.</p>
+<p>The source explicitly says:</p>
+<div class="status"><strong>Co-design routing with topology.</strong></div>
+<h3>The Distributed MoE Picture</h3>
+<pre class="diagram">                    TOKENS
+                       │
+                       ▼
+                    ROUTER
+                       │
+          ┌────────────┼─────────────┐
+          ▼            ▼             ▼
+        GPU 1        GPU 2         GPU 3
+      Experts A/B   Experts C/D   Experts E/F
+          ▲            ▲             ▲
+          └─────── ALL-TO-ALL ───────┘
+                       │
+                       ▼
+                  Expert outputs
+                       │
+                       ▼
+                     Combine</pre>
+<p>This is why MoE sits at the intersection of:</p>
+<pre class="diagram">Model architecture
++
+Distributed systems
++
+Networking
++
+Scheduling</pre>
+<h2>16. Bottlenecks, Metrics and Baselines</h2>
+<h3>The Deepest MoE Lesson</h3>
+<p>The deepest insight is:</p>
+<div class="status"><strong>MoE doesn't eliminate cost; it changes where the cost appears.</strong></div>
+<p>Dense model:</p>
+<pre class="diagram">Parameters
+   ↓
+Dense arithmetic</pre>
+<p>MoE:</p>
+<pre class="diagram">Parameters
+   ↓
+Sparse activation
+   ↓
+Routing
+   ↓
+Communication
+   ↓
+Load balancing</pre>
+<p>That is the central systems lesson.</p>
+<h3>The Full Dense → MoE Story</h3>
+<pre class="diagram">Dense model
+    │
+    ▼
+Every token uses all parameters
+    │
+    ▼
+Parameter count ↑
+    ↓
+Inference FLOPs ↑
+    │
+    ▼
+Expensive
+    │
+    ▼
+MoE idea
+    │
+    ▼
+Create many experts
+    │
+    ▼
+Router selects only a few
+    │
+    ▼
+Sparse computation
+    │
+    ▼
+More parameters per active FLOP
+    │
+    ▼
+But...
+    │
+    ├── Routing
+    ├── All-to-all
+    ├── Load balancing
+    ├── Capacity
+    └── Stragglers</pre>
+<h3>The Full MoE Mechanism in One Diagram</h3>
+<pre class="diagram">                         TOKEN
+                           │
+                           ▼
+                        ROUTER
+                           │
+                    Expert scores
+                           │
+                           ▼
+                         TOP-K
+                           │
+              ┌────────────┴────────────┐
+              ▼                         ▼
+          Expert A                  Expert B
+              │                         │
+              ▼                         ▼
+             FFN                       FFN
+              │                         │
+              └────────────┬────────────┘
+                           ▼
+                    Weighted combine
+                           │
+                           ▼
+                         OUTPUT</pre>
+<h3>The Production MoE Diagram</h3>
+<pre class="diagram">                         REQUEST
+                            │
+                            ▼
+                       VALIDATION
+                            │
+                            ▼
+                         ROUTER
+                            │
+                            ▼
+                         TOP-K
+                            │
+                            ▼
+                       DISPATCH
+                            │
+                            ▼
+                    ALL-TO-ALL NETWORK
+                            │
+             ┌──────────────┼──────────────┐
+             ▼              ▼              ▼
+          GPU 1           GPU 2          GPU 3
+          Experts         Experts        Experts
+             │              │              │
+             └──────────────┼──────────────┘
+                            ▼
+                         COMBINE
+                            │
+                            ▼
+                         RESPONSE
+                            │
+                            ▼
+                        TELEMETRY</pre>
+<h3>The Production Bottleneck Diagram</h3>
+<pre class="diagram">                         MORE TOKENS
+                              │
+                              ▼
+                           ROUTING
+                              │
+                              ▼
+                        TOKEN DISPATCH
+                              │
+                              ▼
+                      ALL-TO-ALL TRAFFIC
+                              │
+                              ▼
+                     EXPERT LOAD SKEW
+                              │
+                  ┌───────────┴───────────┐
+                  ▼                       ▼
+             Overloaded expert       Underused expert
+                  │
+                  ▼
+              Straggler
+                  │
+                  ▼
+             Batch waits
+                  │
+                  ▼
+             p99 increases</pre>
+<p>This is the most important production picture.</p>
+<h3>Why Aggregate TFLOPs Can Mislead</h3>
+<p>Suppose:</p>
+<pre class="diagram">Activated TFLOPs = low</pre>
+<p>You might expect:</p>
+<pre class="diagram">Latency = low</pre>
+<p>But:</p>
+<pre class="diagram">All-to-all time = huge</pre>
+<p>Then:</p>
+<pre class="diagram">Latency = high</pre>
+<p>So:</p>
+<div class="status"><strong>Compute efficiency and system efficiency are not the same thing.</strong></div>
+<p>The source explicitly highlights this lesson.</p>
+<h3>The Main MoE Metrics to Remember</h3>
+<p>Memorize these:</p>
+<pre class="diagram">1. Tokens per expert
+2. Dropped tokens
+3. Dispatch traffic
+4. All-to-all time
+5. Straggler experts
+6. p99 latency</pre>
+<p>These are much more useful than looking only at:</p>
+<pre class="diagram">Total parameter count</pre>
+<p>or:</p>
+<pre class="diagram">Aggregate TFLOPs</pre>
+<h3>MoE and Capacity Planning</h3>
+<p>Ask:</p>
+<pre class="diagram">How many experts?
+
+How many tokens per request?
+
+What is k?
+
+What is expert capacity?
+
+How much cross-device traffic?
+
+How balanced is routing?
+
+What is the worst-case expert load?</pre>
+<p>Then:</p>
+<pre class="diagram">Estimate:
+Compute
++
+Memory
++
+Network
++
+Capacity</pre>
+<p>That's how you think about scaling an MoE system.</p>
+<h3>MoE and Topology-Aware Routing</h3>
+<p>Imagine:</p>
+<pre class="diagram">        FAST LINK
+
+GPU 1 ───────── GPU 2
+
+        SLOW LINK
+
+GPU 1 ───────── GPU 8</pre>
+<p>You want routing that doesn't unnecessarily produce:</p>
+<pre class="diagram">GPU 1 → GPU 8</pre>
+<p>for every token.</p>
+<p>So:</p>
+<pre class="diagram">Routing policy
+      +
+Expert placement
+      +
+Network topology</pre>
+<p>should be co-designed.</p>
+<p>This is explicitly recommended in the source.</p>
+<h3>The Research → Production Evolution</h3>
+<p>The broader story is:</p>
+<pre class="diagram">Sparse expert concept
+      ↓
+Learned router
+      ↓
+Huge parameter capacity
+      ↓
+Top-k / top-1 routing
+      ↓
+Distributed experts
+      ↓
+All-to-all communication
+      ↓
+Load balancing becomes critical
+      ↓
+Topology-aware execution</pre>
+<p>This is how the problem evolved.</p>
+<h3>Simple vs Production vs Advanced</h3>
+<p>The source uses the same framework:</p>
+<table><thead><tr><th>Approach</th><th>Quality</th><th>Latency</th><th>Memory</th><th>Operational complexity</th></tr></thead><tbody><tr><td><strong>Simple baseline</strong></td><td>Easy to reason about</td><td>Predictable</td><td>Often wasteful</td><td>Low</td></tr><tr><td><strong>Production baseline</strong></td><td>Measured and guarded</td><td>Budgeted</td><td>Managed explicitly</td><td>Medium</td></tr><tr><td><strong>Advanced optimization</strong></td><td>Potentially higher</td><td>Can improve materially</td><td>Specialized</td><td>High</td></tr></tbody></table>
+<p>For MoE:</p>
+<pre class="diagram">Simple:
+Small expert setup
+
+Production:
+Measured routing + capacity + observability
+
+Advanced:
+Topology-aware / specialized routing</pre>
+<h3>When Should You Use the Simple Baseline?</h3>
+<p>When you need:</p>
+<pre class="diagram">Correctness reference
++
+Loose resource budget</pre>
+<p>Start with something easy to understand.</p>
+<p>Then measure:</p>
+<pre class="diagram">Expert load
+Communication
+Quality</pre>
+<h3>When Should You Use Advanced Optimization?</h3>
+<p>Only when measurements show a real bottleneck.</p>
+<p>For example:</p>
+<pre class="diagram">Measured bottleneck
+      ↓
+All-to-all communication
+      ↓
+Topology-aware routing</pre>
+<p>or:</p>
+<pre class="diagram">Measured bottleneck
+      ↓
+Expert imbalance
+      ↓
+Improved load balancing</pre>
+<p>The source explicitly recommends advanced optimization only when a measured bottleneck justifies the complexity.</p>
+<h3>The One Big Misconception to Avoid</h3>
+<p>Never think:</p>
+<div class="status"><strong>"MoE = cheap giant model."</strong></div>
+<p>Think:</p>
+<div class="status"><strong>"MoE = giant total capacity + sparse activation + routing system."</strong></div>
+<p>That is much more accurate.</p>
+<h2>17. Interview Explanations</h2>
+<h3>Interview Explanation — Fresh Graduate</h3>
+<div class="status"><strong>Mixture of Experts is a way to make a model much larger without running the entire model for every token. Instead of sending every token through every parameter, a router looks at the token and selects a small number of expert networks. Those experts process the token and their outputs are combined. The advantage is more total model capacity for relatively less per-token computation, but the downside is that routing, communication between GPUs, and load balancing become important.</strong></div>
+<h3>Interview Explanation — AI Engineer</h3>
+<div class="status"><strong>MoE is a sparsely activated conditional-computation architecture. A router produces scores over expert parameter blocks, selects top-k experts, dispatches tokens to them, runs the selected feed-forward networks, and combines their outputs using routing weights. This separates total parameter count from active per-token compute. The trade-off is that dense arithmetic is replaced by routing, all-to-all communication, expert-capacity management, and load balancing.</strong></div>
+<p>This matches the source's core mechanism and interview framing.</p>
+<h3>Interview Explanation — Senior / Staff</h3>
+<div class="status"><strong>I think of MoE as a distributed routing system wrapped around sparse expert computation. The router maps each token to a small subset of experts, which increases total parameter capacity without activating the full parameter set for every token. The main systems trade-off is that compute savings introduce dispatch and all-to-all communication, expert imbalance, capacity constraints, and stragglers. In production I would measure tokens per expert, dropped tokens, all-to-all time, dispatch traffic, topology effects, and p95/p99 latency rather than relying on aggregate TFLOPs alone.</strong></div>
+<p>This reflects the source's production guidance.</p>
+<h3>Interview Follow-Up — "Why Use MoE?"</h3>
+<p>Answer:</p>
+<div class="case-note">To increase total model parameter capacity without activating the full model for every token, separating parameter count from per-token compute.</div>
+<h3>Interview Follow-Up — "What Does the Router Do?"</h3>
+<p>Answer:</p>
+<div class="case-note">It scores the available experts for each token, selects the top-k experts, routes the token to them, and the selected expert outputs are combined according to routing weights.</div>
+<h3>Interview Follow-Up — "Why Is MoE Faster?"</h3>
+<p>A careful answer:</p>
+<div class="case-note">It can reduce activated computation per token because only a small subset of experts runs. But actual latency depends on routing and communication overhead, so lower activated FLOPs does not automatically imply lower end-to-end latency.</div>
+<h3>Interview Follow-Up — "What Is the Main Problem With MoE?"</h3>
+<p>Answer:</p>
+<div class="case-note"><strong>Routing imbalance and all-to-all communication.</strong> An overloaded expert or communication path can become the bottleneck for the whole batch.</div>
+<h3>Interview Follow-Up — "What Is Expert Imbalance?"</h3>
+<p>Answer:</p>
+<div class="case-note">It means the router sends disproportionately many tokens to some experts and too few to others, causing capacity problems and stragglers.</div>
+<h3>Interview Follow-Up — "What Is All-to-All Communication?"</h3>
+<p>Answer:</p>
+<div class="case-note">In a distributed MoE system, different tokens may be routed to experts located on different devices, so tokens have to be exchanged across those devices. The aggregate communication pattern can become an all-to-all bottleneck.</div>
+<h3>Interview Follow-Up — "Why Top-1 Routing?"</h3>
+<p>Answer:</p>
+<div class="case-note">Top-1 routing selects only one expert per token, simplifying sparse routing at large scale. The source notes that expert capacity and imbalance remain important constraints even with top-1 routing.</div>
+<h3>Interview Follow-Up — "What Should I Monitor?"</h3>
+<p>Answer:</p>
+<pre class="diagram">Tokens per expert
+Dropped tokens
+Dispatch traffic
+All-to-all time
+Straggler experts
+p95 / p99</pre>
+<p>The source explicitly recommends these measurements.</p>
+<h3>Interview Follow-Up — "Why Can't I Look Only at TFLOPs?"</h3>
+<p>Answer:</p>
+<div class="case-note">Because MoE can have low activated FLOPs while spending significant time on routing and inter-device communication. Aggregate TFLOPs can hide the real bottleneck.</div>
+<h3>Interview Follow-Up — "What Would You Optimize First?"</h3>
+<p>Answer:</p>
+<div class="case-note">I would first measure whether compute, all-to-all communication, expert imbalance, memory, or queueing is saturating. Then I would optimize the actual binding constraint rather than assuming sparse computation is automatically the bottleneck.</div>
+<p>This follows the source's broader binding-constraint engineering principle.</p>
+<h2>18. Connecting MoE to the AI Stack</h2>
+<h3>The Connected AI Stack</h3>
+<p>Now connect MoE to your previous topics:</p>
+<pre class="diagram">                    TOKENIZATION
+                         │
+                         ▼
+                     TOKEN IDS
+                         │
+                         ▼
+                    EMBEDDINGS
+                         │
+                         ▼
+                 POSITION INFORMATION
+                         │
+                         ▼
+                    TRANSFORMER
+                         │
+                         ▼
+                     ATTENTION
+                         │
+                         ▼
+                  MOE / EXPERT LAYER
+                         │
+              ┌──────────┴──────────┐
+              ▼                     ▼
+           ROUTER                EXPERTS
+              │                     │
+              └──────────┬──────────┘
+                         ▼
+                    CONTEXTUAL STATE</pre>
+<p>Now the big picture becomes:</p>
+<pre class="diagram">Tokenization
+"What are the units?"
+
+Position
+"Where are they?"
+
+Attention
+"Which tokens matter?"
+
+Transformer
+"How do we repeatedly transform them?"
+
+MoE
+"Which part of the model should process
+this token?"</pre>
+<h3>MoE + Scaling Laws</h3>
+<p>Now connect this to your previous chapter.</p>
+<p>Scaling laws ask:</p>
+<pre class="diagram">How should we allocate
+model size + data + compute?</pre>
+<p>MoE changes the relationship between:</p>
+<pre class="diagram">Total parameter count
+        and
+Per-token activated compute</pre>
+<p>So:</p>
+<pre class="diagram">Scaling Laws
+      ↓
+How much capacity should we build?
+
+MoE
+      ↓
+How much of that capacity
+should each token activate?</pre>
+<p>This is an important conceptual connection.</p>
+<h3>MoE + Tokenization</h3>
+<p>Tokenization determines:</p>
+<pre class="diagram">How many tokens exist</pre>
+<p>MoE then routes:</p>
+<pre class="diagram">Each token
+   ↓
+To experts</pre>
+<p>Therefore:</p>
+<pre class="diagram">More tokens
+    ↓
+More routing decisions
+    ↓
+More dispatch
+    ↓
+More communication</pre>
+<p>This means tokenizer behavior can indirectly affect MoE system load.</p>
+<h3>MoE + Positional Encoding</h3>
+<p>Positional encoding answers:</p>
+<pre class="diagram">"Where is this token?"</pre>
+<p>MoE answers:</p>
+<pre class="diagram">"Which experts should process this token?"</pre>
+<p>So:</p>
+<pre class="diagram">Token
+  │
+  ├── Position information
+  │
+  └── Expert routing</pre>
+<p>These are different mechanisms serving different purposes.</p>
+<h3>MoE + Attention</h3>
+<p>Attention answers:</p>
+<pre class="diagram">"Which other tokens are relevant?"</pre>
+<p>MoE answers:</p>
+<pre class="diagram">"Which expert computation should process this token?"</pre>
+<p>So:</p>
+<pre class="diagram">Attention
+   ↓
+Token-to-token information mixing
+
+MoE
+   ↓
+Token-to-expert computation routing</pre>
+<p>This distinction is very useful in interviews.</p>
+<h3>The Full Transformer + MoE Picture</h3>
+<pre class="diagram">                          TOKEN
+                            │
+                            ▼
+                     POSITION INFO
+                            │
+                            ▼
+                        ATTENTION
+                            │
+                            ▼
+                       RESIDUAL
+                            │
+                            ▼
+                     NORMALIZATION
+                            │
+                            ▼
+                          ROUTER
+                            │
+                ┌───────────┼───────────┐
+                ▼           ▼           ▼
+             Expert A    Expert B    Expert C
+                │           │           │
+                └───────────┼───────────┘
+                            ▼
+                         COMBINE
+                            │
+                            ▼
+                         RESIDUAL</pre>
+<p>Conceptually, this is how a Transformer can replace some dense feed-forward computation with sparse experts.</p>
+<h3>The Deep Systems View</h3>
+<p>At small scale:</p>
+<pre class="diagram">MoE
+ ↓
+Looks like a neat architecture</pre>
+<p>At large scale:</p>
+<pre class="diagram">MoE
+ │
+ ├── Router
+ ├── Expert capacity
+ ├── All-to-all
+ ├── Network topology
+ ├── Load balancing
+ ├── Stragglers
+ ├── Distributed synchronization
+ └── Checkpointing</pre>
+<p>This is why MoE becomes a distributed-systems problem.</p>
+<h3>The Biggest Engineering Lesson</h3>
+<p>The source's deeper principle applies perfectly here:</p>
+<div class="status"><strong>Progress often comes from changing the binding constraint.</strong></div>
+<p>Dense model:</p>
+<pre class="diagram">Binding constraint
+     ↓
+Dense compute</pre>
+<p>MoE:</p>
+<pre class="diagram">Change computation
+     ↓
+Sparse experts
+     ↓
+New bottleneck
+     ↓
+Communication / imbalance</pre>
+<p>So MoE didn't remove the bottleneck.</p>
+<p>It <strong>moved the bottleneck</strong>.</p>
+<h3>The Entire MoE Causal Story</h3>
+<pre class="diagram">Need larger model capacity
+            │
+            ▼
+Dense model activates everything
+            │
+            ▼
+Parameter count and compute rise together
+            │
+            ▼
+Introduce experts
+            │
+            ▼
+Router selects only a few experts
+            │
+            ▼
+Sparse per-token computation
+            │
+            ▼
+Higher total parameters per active FLOP
+            │
+            ▼
+But tokens must be routed
+            │
+            ▼
+All-to-all communication
+            │
+            ▼
+Expert load imbalance
+            │
+            ▼
+Capacity problems / stragglers
+            │
+            ▼
+p99 / throughput problems
+            │
+            ▼
+Need load balancing + topology-aware routing</pre>
+<p>This is the complete MoE story.</p>
+<h3>The Research-to-Production Loop</h3>
+<pre class="diagram">Research idea
+     ↓
+Sparse experts
+     ↓
+Learned routing
+     ↓
+Measure activated compute
+     ↓
+Measure communication
+     ↓
+Measure expert balance
+     ↓
+Find bottleneck
+     ↓
+Optimize routing / capacity / topology
+     ↓
+Validate production workload</pre>
+<p>That is the engineering loop.</p>
+<h2>19. What to Remember</h2>
+<h3>What You Should Remember</h3>
+<p><strong>Core Idea</strong></p>
+<div class="status"><strong>MoE makes the model larger without requiring every token to use every parameter.</strong></div>
+<p><strong>Router</strong></p>
+<pre class="diagram">Router
+  ↓
+Scores experts
+  ↓
+Selects top-k</pre>
+<p><strong>Expert</strong></p>
+<pre class="diagram">Selected token
+      ↓
+Expert FFN
+      ↓
+Expert output</pre>
+<p><strong>Combine</strong></p>
+<pre class="diagram">Expert outputs
+      +
+Routing weights
+      ↓
+MoE output</pre>
+<p><strong>Main Advantage</strong></p>
+<pre class="diagram">Huge total parameter capacity
+        +
+Sparse per-token computation</pre>
+<p><strong>Main Cost</strong></p>
+<pre class="diagram">Routing
++
+All-to-all communication
++
+Expert imbalance
++
+Capacity management</pre>
+<p><strong>Main Production Lesson</strong></p>
+<pre class="diagram">Don't look only at FLOPs.
+
+Measure:
+Expert load
++
+Communication
++
+Dropped tokens
++
+Stragglers</pre>
+<h3>The One Diagram to Memorize</h3>
+<pre class="diagram">                         TOKEN
+                           │
+                           ▼
+                        ROUTER
+                           │
+                    Score all experts
+                           │
+                           ▼
+                         TOP-K
+                           │
+                 ┌─────────┴─────────┐
+                 ▼                   ▼
+              Expert A            Expert B
+                 │                   │
+                 ▼                   ▼
+                FFN                 FFN
+                 │                   │
+                 └─────────┬─────────┘
+                           ▼
+                    Weighted combine
+                           │
+                           ▼
+                         OUTPUT</pre>
+<h3>The Production Diagram to Memorize</h3>
+<pre class="diagram">                         TOKEN
+                           │
+                           ▼
+                        ROUTER
+                           │
+                           ▼
+                        TOP-K
+                           │
+                           ▼
+                       DISPATCH
+                           │
+                           ▼
+                    ALL-TO-ALL NETWORK
+                           │
+            ┌──────────────┼──────────────┐
+            ▼              ▼              ▼
+          GPU 1          GPU 2          GPU 3
+        Experts A/B    Experts C/D    Experts E/F
+            │              │              │
+            └──────────────┼──────────────┘
+                           ▼
+                        COMBINE
+                           │
+                           ▼
+                         OUTPUT</pre>
+<p>And remember:</p>
+<pre class="diagram">        THE MOE BOTTLENECK
+
+      Too many tokens
+             ↓
+        Routing skew
+             ↓
+    Overloaded expert
+             ↓
+        Straggler
+             ↓
+       Batch waits
+             ↓
+        p99 increases</pre>
+<h3>Final Mental Picture</h3>
+<p>Imagine a giant company with <strong>1,000 specialists</strong>.</p>
+<p>A customer arrives with a complicated request.</p>
+<p>The receptionist does not send that request to all 1,000 people.</p>
+<p>Instead:</p>
+<pre class="diagram">Customer
+   │
+   ▼
+Receptionist / Router
+   │
+   ├────► Specialist 217
+   │
+   └────► Specialist 803</pre>
+<p>Those specialists solve the problem:</p>
+<pre class="diagram">Specialist 217
+      +
+Specialist 803
+      ↓
+Combined answer</pre>
+<p>That is the <strong>MoE idea</strong>.</p>
+<p>But now imagine the company has offices in different cities.</p>
+<pre class="diagram">Specialist 217 → Hyderabad
+Specialist 803 → Bangalore</pre>
+<p>The request has to be transported between offices.</p>
+<p>Now imagine:</p>
+<pre class="diagram">80% of customers need Specialist 217</pre>
+<p>That specialist becomes overloaded.</p>
+<p>Now the real problem is no longer:</p>
+<div class="case-note">"Do we have enough specialists?"</div>
+<p>You have plenty.</p>
+<p>The real questions become:</p>
+<pre class="diagram">Can we route efficiently?
+Can we balance the load?
+Can the network move the requests fast enough?
+Can overloaded experts keep up?</pre>
+<p>That is the <strong>senior-engineer view of MoE</strong>.</p>
+<h3>The Beginner Mental Model</h3>
+<p>Remember:</p>
+<pre class="diagram">MoE =
+Many experts
++
+Router
++
+Only a few experts work per token</pre>
+<h3>The Engineer Mental Model</h3>
+<p>Remember:</p>
+<pre class="diagram">Token
+  ↓
+Router
+  ↓
+Top-k
+  ↓
+Dispatch
+  ↓
+Expert FFN
+  ↓
+Combine</pre>
+<h3>The Senior Engineer Mental Model</h3>
+<p>Remember:</p>
+<pre class="diagram">MoE
+ │
+ ├── Total parameters ↑
+ ├── Activated compute ↓
+ │
+ ├── Routing ↑
+ ├── Communication ↑
+ ├── Load-balance complexity ↑
+ └── Expert-capacity problems ↑</pre>
+<p>So:</p>
+<div class="status"><strong>MoE trades dense computation for routing and distributed-systems complexity.</strong></div>
+<h3>The Staff Engineer Mental Model</h3>
+<p>Think:</p>
+<pre class="diagram">                   MOE
+                    │
+            ┌───────┴────────┐
+            ▼                ▼
+       Model capacity     Runtime cost
+            │                │
+            ▼          ┌─────┼─────┐
+       Sparse routing   ▼     ▼     ▼
+                    Network Load  Capacity
+                      │      │      │
+                      └──────┼──────┘
+                             ▼
+                       p95 / p99
+                             │
+                             ▼
+                            SLO</pre>
+<p>The question is:</p>
+<div class="status"><strong>Where is the binding constraint?</strong></div>
+<h3>The Final Cause-and-Effect Chain</h3>
+<p>Memorize this:</p>
+<pre class="diagram">Need more model capacity
+        ↓
+Dense models activate everything
+        ↓
+Parameter count and per-token compute rise together
+        ↓
+Introduce many experts
+        ↓
+Router selects a few experts
+        ↓
+Sparse per-token computation
+        ↓
+More total parameters per active FLOP
+        ↓
+But routing is now required
+        ↓
+Tokens move across devices
+        ↓
+All-to-all communication
+        ↓
+Expert imbalance
+        ↓
+Capacity / dropped tokens / stragglers
+        ↓
+p99 / throughput problems
+        ↓
+Load balancing + topology-aware routing
+        ↓
+Measure again</pre>
+<h3>One-Line Summary</h3>
+<div class="status"><strong>Mixture of Experts increases total model capacity by routing each token to only a small subset of expert networks, reducing activated computation per token while introducing new production challenges around routing, all-to-all communication, expert imbalance, capacity, and tail latency.</strong></div>
+<h3>Final "Remember This" Block</h3>
+<pre class="diagram">MoE
+
+Many experts
+     ↓
+Router
+     ↓
+Top-k selection
+     ↓
+Dispatch
+     ↓
+Expert computation
+     ↓
+Combine
+     ↓
+Output
+
+      BUT...
+
+Sparse compute
+     ↓
+Routing cost
+     ↓
+Communication
+     ↓
+Load imbalance
+     ↓
+Stragglers
+     ↓
+p99 / capacity</pre>
+</div>
+<section class="production-case" data-case-study="t6">
+<h2>Production Case Study — Switch Transformer Routing</h2>
+<p>The source's case study is:</p>
+<div class="case-note"><strong>Switch Transformer routing</strong>.</div>
+<p>The binding constraint:</p>
+<div class="case-note">Sparse parameters reduce activated FLOPs, <strong>but introduce routing imbalance and expert-capacity failures</strong>.</div>
+<p>This is the central lesson.</p>
+<h3>Switch Transformer Failure Chain</h3>
+<p>The source summarizes:</p>
+<pre class="diagram">router skew
+     ↓
+overloaded expert
+     ↓
+dropped / queued tokens
+     ↓
+step-time stragglers</pre>
+<p>Let's visualize it:</p>
+<pre class="diagram">Router
+  │
+  ▼
+Too many tokens choose Expert A
+  │
+  ▼
+Expert A reaches capacity
+  │
+  ├────► Tokens queued
+  │
+  └────► Tokens dropped
+  │
+  ▼
+Slow batch / straggler
+  │
+  ▼
+Higher step time / latency</pre>
+<p>That's the core production risk.</p>
+<p class="source-links"><a href="https://arxiv.org/abs/2101.03961" rel="noopener" target="_blank">Primary/public source ↗</a></p>
+</section>
+<section class="audit" data-editorial-pass="4"><h2>Engineer’s checklist: what to test before you trust this</h2>
+<div class="agent-ai">
+<h3>AI Engineer Test</h3>
+<p>The source asks:</p>
+<div class="status"><strong>Can an engineer implement MoE without guessing hidden state, data contracts, or runtime behavior?</strong></div>
+<p>You should be able to explain:</p>
+<pre class="diagram">Input token
+   ↓
+Router
+   ↓
+Top-k
+   ↓
+Dispatch
+   ↓
+Expert
+   ↓
+Combine
+   ↓
+Output</pre>
+<p>You should also know:</p>
+<pre class="diagram">Where tokens move
+Where capacity is enforced
+How outputs are combined</pre>
+<h3>Useful AI Engineer Invariant</h3>
+<p>A practical invariant might be:</p>
+<pre class="diagram">Every input token
+is assigned according to
+the configured routing policy.</pre>
+<p>And a regression signal could be:</p>
+<pre class="diagram">Expert load skew</pre>
+<p>or:</p>
+<pre class="diagram">Dropped-token rate</pre>
+<p>The source recommends explicitly defining one invariant and one measurable regression signal.</p>
+</div>
+<div class="agent-research">
+<h3>AI Researcher Test</h3>
+<p>Separate:</p>
+<pre class="diagram">Mechanism
+   ≠
+Evidence</pre>
+<p>Ask:</p>
+<pre class="diagram">Why does sparse routing help?
+
+What baseline was used?
+
+How many experts?
+
+What k?
+
+What load-balancing mechanism?
+
+What hardware?
+
+What scale?</pre>
+<p>The source emphasizes assumptions behind empirical gains and transfer across scales.</p>
+</div>
+<div class="agent-staff">
+<h3>Staff AI Engineer Test</h3>
+<p>Now ask:</p>
+<div class="status"><strong>Can this survive real distributed production load?</strong></div>
+<p>Think:</p>
+<pre class="diagram">Expert placement
+Routing
+Communication
+Capacity
+Checkpointing
+Synchronization
+Reproducibility
+Observability
+Rollback</pre>
+<p>The source specifically highlights <strong>optimizer state, distributed synchronization, checkpointing, and reproducibility</strong> at this level.</p>
+<h3>Staff-Level Questions</h3>
+<p>A Staff AI Engineer should ask:</p>
+<pre class="diagram">Where is each expert deployed?
+
+What happens if one expert overloads?
+
+What happens if one communication link is slow?
+
+How much traffic is cross-device?
+
+What percentage of tokens are dropped?
+
+What is the worst expert load?
+
+Can an expert be replaced independently?
+
+Can routing change without invalidating state?
+
+What happens under overload?</pre>
+<p>These questions come directly from the production failure and architecture concerns in the source.</p>
+</div>
+<div class="agent-first">
+<h3>First-Principles Test</h3>
+<p>Reduce everything to:</p>
+<pre class="diagram">Required capability
+        ↓
+Binding constraint
+        ↓
+Changed computation
+        ↓
+New resource cost
+        ↓
+New failure mode</pre>
+<p>For MoE:</p>
+<pre class="diagram">Need:
+More model capacity
+
+        ↓
+
+Constraint:
+Dense models activate too many parameters per token
+
+        ↓
+
+Change:
+Activate only a few experts
+
+        ↓
+
+Benefit:
+More total parameters per active FLOP
+
+        ↓
+
+New cost:
+Routing + communication + balancing
+
+        ↓
+
+Failure:
+Expert imbalance / all-to-all bottleneck
+
+        ↓
+
+Production impact:
+p99 / capacity / dropped tokens</pre>
+</div>
+<div class="decision"><strong>Research → Production</strong>
+<p>The source gives the general checkpoint:</p>
+<pre class="diagram">Claim
+  ↓
+Assumption
+  ↓
+Measurement
+  ↓
+Failure boundary
+  ↓
+Rollback criterion</pre>
+<p>For MoE:</p>
+<pre class="diagram">Claim:
+"MoE reduces activated compute."
+
+       ↓
+
+Assumption:
+"Routing and communication remain manageable."
+
+       ↓
+
+Measurement:
+"Measure FLOPs + all-to-all + expert load."
+
+       ↓
+
+Failure boundary:
+"Communication / imbalance dominates."
+
+       ↓
+
+Rollback:
+"Revert or change routing/topology."</pre></div>
+</section>
+<div class="status"><strong>The simplest way to remember the entire topic:</strong><br/><strong>A dense model makes every token use the big brain. An MoE model builds many brains, then uses a router to decide which small set of brains should handle each token. The benefit is huge total capacity with sparse computation; the price is that routing, communication, and load balancing become part of the core engineering problem.</strong></div>
+<div class="chapter-nav"><a href="../foundations/scaling-laws.html">← Previous</a><a href="../index.html">Contents ↑</a><a href="kv-cache-inference-optimization.html">Next →</a></div>
+</section>
+</main>
+</div>
+<footer><a href="../index.html">Contents</a> &middot; <a href="../assets/glossary.html">Glossary</a></footer>
+<script src="../assets/glossary.js"></script>
+</body></html>

@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/><meta content="width=device-width,initial-scale=1" name="viewport"/>
+<title>Pre-training Objectives — AI Engineering &amp; Research Deep Dive</title>
+<link rel="stylesheet" href="../assets/style.css"/>
+</head>
+<body id="top">
+<div class="layout single">
+<main>
+<section class="chapter" data-category="Training &amp; Adaptation" id="t9">
+<div class="chapter-kicker">Training &amp; Adaptation · Chapter 09 / 101</div>
+<h1>Pre-training Objectives</h1>
+<p class="lede">A production-and-research treatment for engineers who already know ML, neural networks, and Transformer fundamentals. Each chapter splits into two pages: <strong>mechanism</strong> first, then systems, failure modes, and research reasoning.</p><div class="plain-bridge"><div class="plain-label">In plain English</div><p>A training objective tells a model <strong>what it should try to predict while learning from massive amounts of raw data</strong>. That prediction task determines what patterns the model gets rewarded for learning.</p></div>
+<div class="chapter-page">
+<div class="page-label">PAGE 1 · MECHANISM, MENTAL MODEL, THEORY</div>
+
+<h2>1. Big Idea and Quick Technical Explanation</h2>
+<p>The most important mental model is:</p>
+<pre class="diagram">Training data
+     ↓
+Prediction task / objective
+     ↓
+Prediction error
+     ↓
+Gradient signal
+     ↓
+Model updates
+     ↓
+Learned representations + capabilities</pre>
+<p>So the objective isn't just a mathematical loss function.</p>
+<p>It is effectively telling the model:</p>
+<div class="case-note"><strong>"These are the mistakes I care about. Learn patterns that help you avoid them."</strong></div>
+<p>The source describes the objective as a <strong>capability prior, not a product specification</strong>.</p>
+<h3>Big Idea — Plain English</h3>
+<p>Imagine teaching a student.</p>
+<p>If you repeatedly give the student:</p>
+<div class="case-note">"Here is a sentence. Predict the next word."</div>
+<p>the student is forced to learn:</p>
+<ul>
+<li>grammar,</li>
+<li>vocabulary,</li>
+<li>relationships between words,</li>
+<li>patterns in language,</li>
+<li>facts that help predict what comes next.</li>
+</ul>
+<p>If instead you give:</p>
+<div class="case-note">"Here is a sentence with some words hidden. Recover the missing words."</div>
+<p>the student learns a somewhat different set of representations.</p>
+<p>So:</p>
+<pre class="diagram">Different learning task
+        ↓
+Different prediction errors
+        ↓
+Different gradient signals
+        ↓
+Different things the model learns well</pre>
+<p>That's what a <strong>pre-training objective</strong> controls.</p>
+<p>The source's core problem is that a foundation model needs to acquire broad structure from raw data <strong>before</strong> scarce supervised instructions can teach it specific behavior.</p>
+<h3>Quick Technical Explanation</h3>
+<p>A <strong>pre-training objective</strong> defines the statistical prediction problem used to train a foundation model.</p>
+<p>For autoregressive language modeling, the source gives:</p>
+<div class="formula">L = −Σ_t log p_θ(x_t | x_&lt;t)</div>
+<p>Let's decode it.</p>
+<p><strong><code>L</code></strong></p>
+<p>The training loss.</p>
+<p>Lower is generally better for the training objective.</p>
+<p><strong><code>x_t</code></strong></p>
+<p>The token we want the model to predict.</p>
+<p><strong><code>x_&lt;t</code></strong></p>
+<p>All tokens that came before it.</p>
+<p>For example:</p>
+<pre class="diagram">The cat sat on the</pre>
+<p>The model tries to predict:</p>
+<pre class="diagram">mat</pre>
+<p>So:</p>
+<div class="formula">p_θ(x_t | x_&lt;t)</div>
+<p>means:</p>
+<div class="case-note"><strong>The probability that the model assigns to the correct next token, given the previous tokens.</strong></div>
+<p>And:</p>
+<div class="formula">−log p_θ(x_t | x_&lt;t)</div>
+<p>means that assigning a high probability to the correct token produces a smaller loss.</p>
+
+<h2>2. The Problem and a Layman Analogy</h2>
+<h3>What Problem Does It Solve?</h3>
+<p>A foundation model starts with essentially no useful learned representation.</p>
+<p>You have:</p>
+<pre class="diagram">Huge raw dataset
+      ↓
+???
+      ↓
+Useful model</pre>
+<p>The question is:</p>
+<div class="case-note"><strong>How do we extract general knowledge and structure from raw data without manually labeling everything?</strong></div>
+<p>Manually labeling trillions of tokens would be impractical.</p>
+<p>So we create a <strong>self-supervised learning problem</strong>.</p>
+<p>For example:</p>
+<pre class="diagram">Input:
+
+"The capital of France is"
+
+Target:
+
+"Paris"</pre>
+<p>The original text itself provides the training signal.</p>
+<p>No human has to manually create:</p>
+<pre class="diagram">Question: What is the capital of France?
+Answer: Paris</pre>
+<p>Instead:</p>
+<pre class="diagram">Raw text
+   ↓
+Create prediction task automatically
+   ↓
+Model predicts
+   ↓
+Compare prediction with actual token
+   ↓
+Calculate loss
+   ↓
+Update model</pre>
+<p>This allows training over enormous corpora.</p>
+<p>The source summarizes the design as:</p>
+<div class="case-note"><strong>Raw data → self-supervised likelihood → learned statistical structure.</strong></div>
+<h3>Layman Analogy — Fill in the Blank</h3>
+<p>Imagine giving someone a huge book.</p>
+<p>Instead of teaching them chapter by chapter, you randomly remove words:</p>
+<pre class="diagram">The cat sat on the ___.</pre>
+<p>They have to predict:</p>
+<pre class="diagram">mat</pre>
+<p>Do this billions of times.</p>
+<p>Eventually, they learn:</p>
+<pre class="diagram">Vocabulary
+Grammar
+Syntax
+Patterns
+Relationships
+World knowledge</pre>
+<p>The important part is:</p>
+<div class="case-note"><strong>The exercise determines what the student gets good at.</strong></div>
+<p>That's exactly what a training objective does.</p>
+
+<h2>3. Core Mental Model and What "Self-Supervised" Means</h2>
+<h3>Core Mental Model</h3>
+<p>Remember this:</p>
+<pre class="diagram">                RAW DATA
+                   │
+                   ▼
+           Create prediction task
+                   │
+                   ▼
+           Model makes prediction
+                   │
+                   ▼
+             Calculate loss
+                   │
+                   ▼
+            Backpropagation
+                   │
+                   ▼
+            Update parameters
+                   │
+                   ▼
+            Repeat billions of times
+                   │
+                   ▼
+       Learned representations
+       + statistical capabilities</pre>
+<p>The critical connection is:</p>
+<pre class="diagram">Objective
+   ↓
+What counts as an error
+   ↓
+Gradient signal
+   ↓
+What the model learns</pre>
+<p>The source explicitly says:</p>
+<div class="status"><strong>The objective determines which prediction errors create gradient signal.</strong></div>
+<h3>What Is "Self-Supervised"?</h3>
+<p>This term is extremely important.</p>
+<p><strong>Supervised learning</strong></p>
+<p>Humans provide labels:</p>
+<pre class="diagram">Image → "cat"
+Image → "dog"
+Image → "car"</pre>
+<p><strong>Self-supervised learning</strong></p>
+<p>The data itself provides the target.</p>
+<p>For next-token prediction:</p>
+<pre class="diagram">"The cat sat on the"
+             ↓
+Target = "mat"</pre>
+<p>Nobody manually labeled it.</p>
+<p>The original sequence already contains the answer.</p>
+<p>So:</p>
+<pre class="diagram">Self-supervised
+
+Raw data
+   ↓
+Automatically construct target
+   ↓
+Prediction
+   ↓
+Loss</pre>
+<p>That's why self-supervised pre-training can scale to enormous datasets.</p>
+
+<h2>4. Under the Hood — Step by Step</h2>
+<h3>Step 1 — Collect raw data</h3>
+<p>Suppose:</p>
+<pre class="diagram">"The cat sat on the mat."</pre>
+<h3>Step 2 — Convert text into tokens</h3>
+<p>For example:</p>
+<pre class="diagram">"The" "cat" "sat" "on" "the" "mat"</pre>
+<h3>Step 3 — Create prediction examples</h3>
+<p>For causal language modeling:</p>
+<pre class="diagram">Input                  Target
+
+"The"                  "cat"
+
+"The cat"              "sat"
+
+"The cat sat"          "on"
+
+"The cat sat on"       "the"
+
+"The cat sat on the"   "mat"</pre>
+<p>The model therefore learns:</p>
+<pre class="diagram">Previous context
+      ↓
+Predict next token</pre>
+<h3>Step 4 — Model produces probabilities</h3>
+<p>For:</p>
+<pre class="diagram">"The cat sat on the"</pre>
+<p>the model might output:</p>
+<pre class="diagram">mat     → 0.70
+floor   → 0.10
+chair   → 0.05
+dog     → 0.03
+...</pre>
+<p>The correct answer is:</p>
+<pre class="diagram">mat</pre>
+<p>So the model receives a strong reward signal for assigning high probability to <code>"mat"</code>.</p>
+<h3>Step 5 — Calculate loss</h3>
+<p>If:</p>
+<div class="formula">p(mat) = 0.70</div>
+<p>then:</p>
+<div class="formula">L = −log(0.70)</div>
+<p>Approximately:</p>
+<div class="formula">L ≈ 0.357</div>
+<p>If the model instead assigns:</p>
+<div class="formula">p(mat) = 0.01</div>
+<p>then:</p>
+<div class="formula">L = −log(0.01) ≈ 4.605</div>
+<p>So:</p>
+<pre class="diagram">Correct token probability ↑
+        ↓
+Loss ↓</pre>
+
+<h2>5. Why the Objective Creates Capabilities</h2>
+<p>This is the deeper part.</p>
+<p>Suppose you're training on:</p>
+<pre class="diagram">The dog chased the cat because it...</pre>
+<p>To predict the next token correctly, the model needs to understand patterns involving:</p>
+<ul>
+<li>syntax,</li>
+<li>word relationships,</li>
+<li>context,</li>
+<li>semantics,</li>
+<li>common sequences.</li>
+</ul>
+<p>As the context becomes more complicated, predicting the next token can require increasingly rich internal representations.</p>
+<p>So:</p>
+<pre class="diagram">Simple prediction task
+        ↓
+Requires understanding patterns
+        ↓
+Model develops representations
+        ↓
+Capabilities emerge</pre>
+<p>This is why the source calls the objective a <strong>capability prior</strong>.</p>
+<p>But notice the word <strong>prior</strong>.</p>
+<p>It does <strong>not</strong> guarantee a particular product behavior.</p>
+<h3>Objective ≠ Product Specification</h3>
+<p>This is one of the most important points in the material.</p>
+<p>Suppose your objective is:</p>
+<pre class="diagram">Predict next token</pre>
+<p>Success means:</p>
+<div class="case-note">The model became good at predicting tokens.</div>
+<p>It does <strong>not automatically mean</strong>:</p>
+<pre class="diagram">Good instruction following
+Good factual freshness
+Good calibration
+Good safety
+Good reasoning</pre>
+<p>The source explicitly identifies this as a primary failure boundary:</p>
+<div class="status"><strong>Objective success does not imply instruction following, factual freshness, calibration, or safety.</strong></div>
+<p>This is a crucial distinction.</p>
+<pre class="diagram">Training objective
+       ↓
+Optimizes a statistical capability
+       ↓
+Does NOT automatically guarantee
+       ↓
+Desired product behavior</pre>
+<p>That's why later stages such as instruction tuning and other alignment/evaluation processes matter.</p>
+
+<h2>6. Different Pre-training Objectives: Next-Token vs Denoising, BERT vs GPT</h2>
+<p>The source specifically mentions two broad examples:</p>
+<pre class="diagram">Self-supervised likelihood
+        ├── Next-token prediction
+        └── Denoising</pre>
+<p>Let's understand the difference.</p>
+<h3>A. Next-token prediction</h3>
+<p>Also called <strong>causal language modeling</strong>.</p>
+<pre class="diagram">The cat sat on the
+                 ↓
+               PREDICT
+                 ↓
+                mat</pre>
+<p>The model can only use previous context.</p>
+<pre class="diagram">Token 1 → Token 2 → Token 3 → Token 4
+                    ↓
+                predict next</pre>
+<p>This became dominant for general-purpose generative LLMs, according to the source.</p>
+<h3>B. Denoising / masked prediction</h3>
+<p>Instead of always predicting the next token, we can corrupt or hide parts of the input.</p>
+<p>For example:</p>
+<pre class="diagram">The cat [MASK] on the mat.</pre>
+<p>The model predicts:</p>
+<pre class="diagram">sat</pre>
+<p>This lets the model use surrounding context.</p>
+<pre class="diagram">Left context ──┐
+               ↓
+             [MASK]
+               ↑
+Right context ─┘</pre>
+<p>The source cites BERT as an important example of masked-language-model pre-training.</p>
+<h3>BERT vs GPT-Style Objectives</h3>
+<p>This is a useful conceptual comparison.</p>
+<p><strong>BERT-style</strong></p>
+<pre class="diagram">The cat [MASK] on the mat.
+         ↑
+      predict</pre>
+<p>The model can use:</p>
+<pre class="diagram">left context + right context</pre>
+<p>This is useful for learning representations.</p>
+<p>The source notes that encoder objectives remain useful for <strong>retrieval and representation learning</strong>.</p>
+<p><strong>GPT-style</strong></p>
+<pre class="diagram">The cat sat on the
+                 ↓
+               predict
+                 ↓
+                mat</pre>
+<p>The model predicts sequentially from left to right.</p>
+<p>This naturally fits generation:</p>
+<pre class="diagram">Prompt
+  ↓
+Token
+  ↓
+Token
+  ↓
+Token
+  ↓
+...</pre>
+<p>The source says large-scale autoregressive next-token training demonstrated in-context behavior and that causal next-token objectives dominate general-purpose generative LLMs.</p>
+</div>
+<div class="chapter-page">
+<div class="page-label">PAGE 2 · PRODUCTION, TRADE-OFFS, INTERVIEW REASONING</div>
+
+<h2>7. Scaling and Data Quality</h2>
+<h3>Scaling</h3>
+<p>The source gives the general request-time decomposition:</p>
+<div class="formula">T_request = T_queue + T_compute + T_memory + T_network + T_validation</div>
+<p>For <strong>pre-training objectives</strong>, however, the more important scaling dimensions are things like:</p>
+<pre class="diagram">Dataset size
+Model size
+Sequence length
+Number of training tokens
+Training steps
+Data quality
+Data mixture</pre>
+<p>The source emphasizes that the practical bottleneck can become <strong>data quality and objective mismatch</strong>, rather than simply raw compute.</p>
+<p>So imagine:</p>
+<pre class="diagram">More compute
+     ↓
+Bigger model
+     ↓
+More training</pre>
+<p>You might expect:</p>
+<pre class="diagram">Capability ↑</pre>
+<p>But eventually:</p>
+<pre class="diagram">Poor-quality data
+
++
+
+Duplicate data
+
++
+
+Contaminated evaluation
+
++
+
+Objective mismatch</pre>
+<p>can limit useful progress.</p>
+<h3>Data Quality Becomes Part of the Objective</h3>
+<p>This is one of the most important engineering insights.</p>
+<p>Imagine training on:</p>
+<pre class="diagram">40% high-quality data
+30% duplicated data
+20% low-quality data
+10% contaminated / problematic data</pre>
+<p>The model isn't simply learning "the objective."</p>
+<p>It's learning the objective <strong>from that data distribution</strong>.</p>
+<p>Therefore:</p>
+<pre class="diagram">Objective
+    +
+Data mixture
+    +
+Data quality
+    ↓
+Learned behavior</pre>
+<p>The production guidance in the source specifically says to track:</p>
+<ul>
+<li>data mixture,</li>
+<li>deduplication,</li>
+<li>contamination,</li>
+<li>domain coverage</li>
+</ul>
+<p>as first-class training artifacts.</p>
+
+<h2>8. Data Contamination and the Production Training Pipeline</h2>
+<h3>Data Contamination</h3>
+<p><strong>Contamination</strong> means evaluation/test information can leak into the training data.</p>
+<p>Imagine:</p>
+<pre class="diagram">Training data
+      ↓
+Contains benchmark questions
+      ↓
+Model sees them during training
+      ↓
+Evaluation
+      ↓
+Looks unusually good</pre>
+<p>But the model may have effectively seen the answer before.</p>
+<p>So:</p>
+<pre class="diagram">Benchmark score ↑
+       ≠
+Real capability ↑</pre>
+<p>This is why the source identifies <strong>data contamination</strong> as a major failure boundary.</p>
+<h3>Production Training Pipeline</h3>
+<p><strong>Offline / Async</strong></p>
+<p>Pre-training is primarily an offline process:</p>
+<pre class="diagram">Raw Data
+   ↓
+Data Cleaning
+   ↓
+Deduplication
+   ↓
+Contamination Checks
+   ↓
+Data Mixture
+   ↓
+Tokenization
+   ↓
+Training
+   ↓
+Evaluation
+   ↓
+Checkpoint
+   ↓
+Promote</pre>
+<p>The source's simplified production architecture is:</p>
+<pre class="diagram">Data / artifacts
+      ↓
+Version + validate
+      ↓
+Build / train / index
+      ↓
+Evaluate + promote</pre>
+
+<h2>9. Objective-Task Mismatch and What Usually Goes Wrong</h2>
+<h3>What Does "Objective-Task Mismatch" Mean?</h3>
+<p>This is an important phrase from the source.</p>
+<p>Suppose your objective is:</p>
+<pre class="diagram">Predict next token</pre>
+<p>But your product requires:</p>
+<pre class="diagram">Follow complex instructions
+Use tools correctly
+Give reliable answers
+Follow safety rules</pre>
+<p>There is a gap.</p>
+<pre class="diagram">Training objective
+       ↓
+What training optimizes
+       ↓
+Product requirement
+       ↓
+What users actually want</pre>
+<p>If these aren't aligned:</p>
+<pre class="diagram">Objective success
+       ≠
+Product success</pre>
+<p>This is <strong>objective-task mismatch</strong>.</p>
+<p>It doesn't mean next-token prediction is bad.</p>
+<p>It means:</p>
+<div class="case-note"><strong>A training objective optimizes a specific statistical task, while a product usually requires a broader set of behaviors.</strong></div>
+<h3>What Usually Goes Wrong</h3>
+<p><strong>Failure 1 — Good objective, bad behavior</strong></p>
+<pre class="diagram">Training loss ↓
+       ↓
+Model learns objective
+       ↓
+But instruction following / safety / calibration is weak</pre>
+<p>Cause:</p>
+<pre class="diagram">Objective ≠ complete product specification</pre>
+<p><strong>Failure 2 — Data contamination</strong></p>
+<pre class="diagram">Training data
+     ↓
+Evaluation data accidentally overlaps
+     ↓
+Benchmark score ↑
+     ↓
+False confidence</pre>
+<p><strong>Failure 3 — Offline success, online failure</strong></p>
+<p>You train and evaluate using one distribution:</p>
+<pre class="diagram">Training / benchmark distribution</pre>
+<p>but production sees:</p>
+<pre class="diagram">Real-world distribution</pre>
+<p>If:</p>
+<pre class="diagram">Evaluation distribution
+       ≠
+Deployment distribution</pre>
+<p>then benchmark performance may not predict production behavior.</p>
+<p>The source recommends comparing production traces with evaluation slices and adding deployment-shaped regression tests.</p>
+
+<h2>10. What Are We Trading?</h2>
+<p>The source frames the trade-off as:</p>
+<div class="status"><strong>Generality vs inductive bias.</strong></div>
+<p>Let's make that simple.</p>
+<h3>General objective</h3>
+<p>You want the model to learn broad patterns from huge amounts of data.</p>
+<p>For example:</p>
+<pre class="diagram">Next-token prediction</pre>
+<p>Advantage:</p>
+<pre class="diagram">Very general
+Scales naturally
+Works on raw text</pre>
+<p>But:</p>
+<pre class="diagram">May not directly optimize the exact behavior
+your application wants</pre>
+<h3>Stronger inductive bias</h3>
+<p><strong>Inductive bias</strong> means assumptions built into the learning setup about what kinds of patterns should be learned.</p>
+<p>For example:</p>
+<pre class="diagram">Objective
++
+Architecture
++
+Data structure</pre>
+<p>can make certain kinds of representations easier to learn.</p>
+<p>The trade-off is:</p>
+<pre class="diagram">More general
+       ↕
+More specialized assumptions</pre>
+
+<h2>11. Common Misunderstandings</h2>
+<h3>Misconception 1</h3>
+<p><strong>Misconception:</strong> "Lower training loss means the model is better at everything."<br/><strong>Reality:</strong> No. Lower loss means the model became better according to <strong>that particular objective</strong>.</p>
+<pre class="diagram">Training loss ↓
+       ↓
+Objective performance ↑
+       ≠
+Every downstream capability ↑</pre>
+<h3>Misconception 2</h3>
+<p><strong>Misconception:</strong> "More compute automatically means better results."<br/><strong>Reality:</strong> Not necessarily. The source specifically says additional compute, context, parameters, or data can have diminishing or negative operational returns.</p>
+<p>You can reach:</p>
+<pre class="diagram">More compute
+       ↓
+More training
+       ↓
+But poor data / objective mismatch
+       ↓
+Limited useful improvement</pre>
+<h3>Misconception 3</h3>
+<p><strong>Misconception:</strong> "The objective tells us exactly what the final product will do."<br/><strong>Reality:</strong> No. The objective determines what errors produce learning signal.</p>
+<p>It is a <strong>capability prior</strong>, not a complete product specification.</p>
+<h3>Misconception 4</h3>
+<p><strong>Misconception:</strong> "A prototype training pipeline is production-ready."<br/><strong>Reality:</strong> Production requires:</p>
+<pre class="diagram">Versioning
+Observability
+Evaluation
+Rollback
+Reproducibility
+Explicit ownership
+Failure isolation</pre>
+<p>The source explicitly makes this distinction.</p>
+
+<h2>12. Research Background</h2>
+<p>The source highlights two major references.</p>
+<div class="source-card">
+<h3>1. BERT — Devlin et al., 2018</h3>
+<div class="meta">Masked-language-model pre-training</div>
+<p><strong>What it demonstrated</strong></p>
+<p>BERT popularized <strong>masked-language-model pre-training for bidirectional representations</strong>.</p>
+<p>Conceptually:</p>
+<pre class="diagram">The cat [MASK] on the mat
+         ↓
+      predict
+         ↓
+        sat</pre>
+<p><strong>Why it matters</strong></p>
+<p>It demonstrated that self-supervised prediction tasks can create useful representations before task-specific training.</p>
+<p>The source says encoder objectives remain useful for:</p>
+<pre class="diagram">Retrieval
+Representation learning</pre>
+</div>
+<h3>GPT-Style Autoregressive Pre-training</h3>
+<p>The source references:</p>
+<div class="source-card">
+<h3>Language Models are Few-Shot Learners — Brown et al., 2020</h3>
+<div class="meta">Large-scale autoregressive pre-training</div>
+<p><strong>What it demonstrated</strong></p>
+<p>Large-scale autoregressive next-token training and <strong>in-context behavior</strong>.</p>
+<p>The basic mechanism:</p>
+<pre class="diagram">Prompt
+  ↓
+Predict next token
+  ↓
+Predict next token
+  ↓
+Predict next token
+  ↓
+...</pre>
+<p>This objective became central to general-purpose generative LLMs.</p>
+</div>
+<h3>Research Discipline</h3>
+<p>Don't make this mistake:</p>
+<pre class="diagram">Paper demonstrates improvement
+          ↓
+Therefore universal law</pre>
+<p>Instead:</p>
+<pre class="diagram">Paper result
+    ↓
+What model?
+    ↓
+What data?
+    ↓
+What scale?
+    ↓
+What metric?
+    ↓
+What hardware?
+    ↓
+Does it transfer?</pre>
+<p>The source explicitly says research results should be treated as conditional on:</p>
+<pre class="diagram">Model family
+Dataset
+Scale
+Metric
+Hardware</pre>
+<p>before turning them into engineering rules.</p>
+
+<h2>13. Production Case Study — Large-Scale Autoregressive Pre-training</h2>
+<section class="production-case" data-case-study="t9">
+<div class="case-meta"><span class="case-pill">System: GPT-style causal language modeling</span></div>
+<p>The source's case study is GPT-style causal language modeling.</p>
+<h3>Binding constraint</h3>
+<p>The design gives us a simple, scalable training interface:</p>
+<div class="case-chain">Token stream
+    ↓
+Predict next token
+    ↓
+Calculate loss</div>
+<p>But it shifts quality dependence toward:</p>
+<div class="case-chain">Data
+
++
+
+Scale</div>
+<h3>Design</h3>
+<div class="case-chain">Broad token stream
+       ↓
+Causal masking
+       ↓
+Next-token prediction
+       ↓
+Loss
+       ↓
+Gradient update</div>
+<p>The source summarizes the causal chain as:</p>
+<div class="case-chain">data mixture
+     ↓
+next-token loss
+     ↓
+representation / capability transfer
+     ↓
+distribution dependence</div>
+<h3>Engineering lesson</h3>
+<p>The source gives a very important conclusion:</p>
+<div class="status"><strong>At scale, data quality and contamination controls become part of the objective.</strong></div>
+<p>Meaning:</p>
+<p>You can't treat the objective as only:</p>
+<div class="case-chain">Loss function</div>
+<p>You have to think about:</p>
+<div class="case-chain">Loss
+
++
+
+Data pipeline
+
++
+
+Data quality
+
++
+
+Deduplication
+
++
+
+Contamination
+
++
+
+Evaluation</div>
+<p>as one training system.</p>
+<p class="source-links"><a href="https://arxiv.org/abs/2005.14165" rel="noopener" target="_blank">Primary/public source ↗</a></p>
+</section>
+
+<h2>14. AI/ML Engineer, AI Researcher, and Staff / Senior Perspectives</h2>
+<h3>AI/ML Engineer Perspective</h3>
+<p>As an AI/ML engineer, you should understand the complete path:</p>
+<pre class="diagram">Raw data
+   ↓
+Data filtering
+   ↓
+Deduplication
+   ↓
+Tokenization
+   ↓
+Training objective
+   ↓
+Forward pass
+   ↓
+Loss
+   ↓
+Backpropagation
+   ↓
+Optimizer
+   ↓
+Parameter update
+   ↓
+Checkpoint
+   ↓
+Evaluation</pre>
+<p>You should be able to identify:</p>
+<p><strong>Inputs</strong></p>
+<pre class="diagram">Tokens
+Training examples
+Attention masks</pre>
+<p><strong>Outputs</strong></p>
+<pre class="diagram">Logits
+Loss
+Gradients
+Updated parameters</pre>
+<p><strong>Important metrics</strong></p>
+<pre class="diagram">Training loss
+Validation loss
+Perplexity
+Throughput
+GPU utilization
+Memory
+Data quality
+Contamination
+Evaluation performance</pre>
+<h3>AI Researcher Perspective</h3>
+<p>The research question is:</p>
+<div class="case-note"><strong>What prediction objective causes a model to learn the representations and capabilities we want?</strong></div>
+<p>You're investigating:</p>
+<pre class="diagram">Objective
+    ↓
+Gradient signal
+    ↓
+Representation
+    ↓
+Learned capability
+    ↓
+Downstream behavior</pre>
+<p>And you should ask:</p>
+<div class="case-note">What happens if I change the prediction task?</div>
+<p>For example:</p>
+<pre class="diagram">Next-token prediction
+        vs
+Masked prediction
+        vs
+Denoising
+        vs
+Other self-supervised objectives</pre>
+<p>The key research question is whether the changed objective produces better representations or capabilities under the relevant evaluation.</p>
+<h3>Staff / Senior AI Engineer Perspective</h3>
+<p>At senior level, you're not only asking:</p>
+<div class="case-note">"What loss function are we using?"</div>
+<p>You're asking:</p>
+<pre class="diagram">What are we optimizing?
+        ↓
+What behavior does that reward?
+        ↓
+What data distribution are we optimizing on?
+        ↓
+Does it match deployment?
+        ↓
+How do we detect contamination?
+        ↓
+How reproducible is the training run?
+        ↓
+How do we version data + objective + model?
+        ↓
+How do we roll back?</pre>
+<p>The source specifically highlights:</p>
+<ul>
+<li>optimizer state,</li>
+<li>distributed synchronization,</li>
+<li>checkpointing,</li>
+<li>reproducibility,</li>
+<li>ownership,</li>
+<li>degradation behavior,</li>
+<li>rollback,</li>
+<li>observability.</li>
+</ul>
+
+<h2>15. First-Principles Thinking</h2>
+<p>Try to reason through these.</p>
+<h3>Question 1</h3>
+<p><strong>Why do we need a pre-training objective at all?</strong></p>
+<p>Because raw data alone doesn't specify what the model should learn.</p>
+<p>The objective converts raw data into a measurable prediction problem.</p>
+<pre class="diagram">Raw data
+   ↓
+Prediction task
+   ↓
+Error
+   ↓
+Gradient
+   ↓
+Learning</pre>
+<h3>Question 2</h3>
+<p><strong>Why does next-token prediction teach more than just grammar?</strong></p>
+<p>Because correctly predicting tokens across diverse contexts requires the model to capture many statistical relationships in the data.</p>
+<h3>Question 3</h3>
+<p><strong>Why doesn't low training loss guarantee a good assistant?</strong></p>
+<p>Because:</p>
+<pre class="diagram">Next-token prediction
+       ≠
+Instruction following
+       ≠
+Factual freshness
+       ≠
+Safety
+       ≠
+Calibration</pre>
+<p>The objective only directly optimizes its own prediction problem.</p>
+<h3>Question 4</h3>
+<p><strong>Why does data quality matter so much?</strong></p>
+<p>Because the model learns from the distribution you provide.</p>
+<pre class="diagram">Training objective
+       +
+Training distribution
+       ↓
+Learned model</pre>
+<p>Bad distribution → potentially bad learned behavior.</p>
+<h3>Question 5</h3>
+<p><strong>Why can more data stop helping?</strong></p>
+<p>Because additional data can contain:</p>
+<pre class="diagram">Duplicates
+Low-quality content
+Contamination
+Irrelevant domains
+Distribution mismatch</pre>
+<p>So:</p>
+<pre class="diagram">More data
+   ≠
+More useful signal</pre>
+
+<h2>16. Interview Answer and Follow-Up Questions</h2>
+<h3>Interview Answer — 30–45 Seconds</h3>
+<div class="case-note"><strong>"A pre-training objective defines the prediction problem that a foundation model learns from raw data, and therefore determines which prediction errors generate gradient signal. For a causal language model, the objective is typically next-token prediction, where the model maximizes the probability of the next token given previous tokens. This allows us to learn from huge unlabeled corpora through self-supervision. The important trade-off is that the objective is a capability prior rather than a complete product specification: doing well on next-token prediction doesn't automatically guarantee instruction following, factual freshness, calibration, or safety. In production and research, I would therefore evaluate not just training loss but also data quality, contamination, downstream capabilities, and whether the evaluation distribution matches the deployment distribution."</strong></div>
+<p>This follows the source's interview framing and its central distinction between objective success and product behavior.</p>
+<h3>Follow-Up Interview Questions</h3>
+<p><strong>Beginner</strong></p>
+<p><strong>What is a training objective?</strong></p>
+<p>The mathematical goal that tells the model what prediction error to minimize.</p>
+<p><strong>What is self-supervised learning?</strong></p>
+<p>Learning where the training signal is automatically derived from the input data itself.</p>
+<p><strong>What is next-token prediction?</strong></p>
+<p>Predicting the next token given the previous tokens.</p>
+<p><strong>Intermediate</strong></p>
+<p><strong>Why is next-token prediction useful?</strong></p>
+<p>Because solving the prediction problem across massive diverse corpora forces the model to learn statistical structure in language.</p>
+<p><strong>What is the difference between BERT and GPT-style pre-training?</strong></p>
+<p>Conceptually:</p>
+<pre class="diagram">BERT:
+
+Use surrounding context to predict masked content.
+
+GPT:
+
+Use previous context to predict the next token.</pre>
+<p><strong>What is objective-task mismatch?</strong></p>
+<p>When the behavior directly optimized during training differs from the behavior required by the downstream application.</p>
+<p><strong>Senior</strong></p>
+<p><strong>Why isn't lower training loss enough?</strong></p>
+<p>Because training loss measures performance on the pre-training objective, not necessarily downstream product requirements.</p>
+<p><strong>What would you monitor during large-scale pre-training?</strong></p>
+<pre class="diagram">Training loss
+Validation loss
+Data quality
+Data mixture
+Deduplication
+Contamination
+Domain coverage
+Throughput
+GPU utilization
+Memory
+Checkpoint health
+Evaluation performance</pre>
+<p><strong>How do you know your benchmark is trustworthy?</strong></p>
+<p>Check:</p>
+<pre class="diagram">Training/evaluation contamination
+
++
+
+Evaluation distribution
+
++
+
+Model/data scale
+
++
+
+Relevant metrics
+
++
+
+Independent downstream evaluation</pre>
+
+<h2>17. Connected Concepts</h2>
+<p>This topic sits here:</p>
+<pre class="diagram">                Raw Data
+                   │
+                   ▼
+              Tokenization
+                   │
+                   ▼
+         Pre-training Objective
+                   │
+         ┌────────┴────────┐
+         ▼                 ▼
+  Next-token          Denoising /
+  prediction          masked prediction
+         │                 │
+         └────────┬────────┘
+                  ▼
+             Loss Function
+                  │
+                  ▼
+            Backpropagation
+                  │
+                  ▼
+              Optimizer
+                  │
+                  ▼
+             Model Weights
+                  │
+                  ▼
+           Learned Capability
+                  │
+                  ▼
+         Instruction Tuning / SFT
+                  │
+                  ▼
+             Evaluation
+                  │
+                  ▼
+             Deployment</pre>
+<p>Your next natural topic after this is <strong>Instruction Tuning &amp; SFT</strong>, because pre-training teaches broad statistical structure, while instruction tuning is used to shape that model toward desired instruction-following behavior. The supplied material itself places Instruction Tuning &amp; SFT immediately after Pre-training Objectives.</p>
+
+<h2>18. Mental Model, Diagram, Cause → Effect Chain, and Deepest Takeaway</h2>
+<h3>One Mental Model</h3>
+<p>Remember:</p>
+<div class="status"><strong>The training objective decides what the model gets rewarded for learning.</strong></div>
+<pre class="diagram">Raw data
+   ↓
+Objective
+   ↓
+Prediction
+   ↓
+Error
+   ↓
+Gradient
+   ↓
+Parameter update
+   ↓
+Learned representations
+   ↓
+Capabilities</pre>
+<p>The most important subtlety:</p>
+<pre class="diagram">Capability learned from objective
+           ≠
+Complete product behavior</pre>
+<h3>One Diagram to Memorize</h3>
+<pre class="diagram">                   RAW DATA
+                      │
+                      ▼
+             SELF-SUPERVISED TASK
+                      │
+         ┌────────────┴────────────┐
+         ▼                         ▼
+  Next-token prediction      Masked / denoising
+         │                         │
+         └────────────┬────────────┘
+                      ▼
+                 PREDICTION
+                      │
+                      ▼
+                    LOSS
+                      │
+                      ▼
+                GRADIENT SIGNAL
+                      │
+                      ▼
+             PARAMETER UPDATE
+                      │
+                      ▼
+            LEARNED REPRESENTATION
+                      │
+                      ▼
+                CAPABILITIES
+                      │
+                      ▼
+           DOWNSTREAM BEHAVIOR</pre>
+<h3>Cause → Effect Chain</h3>
+<div class="topic-check"><code>Need broad knowledge from raw data
+             ↓
+Human labels are scarce
+             ↓
+Create a self-supervised prediction task
+             ↓
+Objective defines what errors matter
+             ↓
+Errors generate gradient signal
+             ↓
+Model learns statistical structure
+             ↓
+Capabilities emerge
+             ↓
+But objective ≠ complete product specification
+             ↓
+Objective-task mismatch / data problems appear
+             ↓
+Need downstream tuning + evaluation + data controls</code></div>
+<h3>What You Should Remember</h3>
+<p><strong>The core idea</strong></p>
+<div class="case-note"><strong>A pre-training objective is the learning problem we give the model so it can extract broad statistical structure from raw data.</strong></div>
+<p><strong>The mathematical idea</strong></p>
+<p>For causal language modeling:</p>
+<div class="formula">L = −Σ_t log p_θ(x_t | x_&lt;t)</div>
+<p>Meaning:</p>
+<div class="case-note"><strong>Predict each next token from the tokens that came before it, and penalize the model when it assigns low probability to the correct token.</strong></div>
+<p><strong>The engineering idea</strong></p>
+<pre class="diagram">Objective
+   +
+Data
+   +
+Scale
+   +
+Evaluation
+   ↓
+Learned model</pre>
+<p>You cannot reason about the objective independently of the data and evaluation pipeline.</p>
+<p><strong>The research idea</strong></p>
+<div class="case-note"><strong>The objective determines which prediction errors create gradient signal; changing the objective changes what the model is incentivized to learn.</strong></div>
+<p><strong>The deepest takeaway</strong></p>
+<div class="case-note"><strong>A lower pre-training loss means the model got better at the prediction problem you defined—not automatically at every behavior you want from the final AI system.</strong></div>
+</div>
+<div class="status">Decision checkpoint — The objective determines which prediction errors create gradient signal; it is a capability prior, not a product specification.</div>
+<div class="chapter-nav"><a href="quantization.html">← Previous</a><a href="../index.html">Contents ↑</a><a href="instruction-tuning-sft.html">Next →</a></div>
+</section>
+</main>
+</div>
+<footer><a href="../index.html">Contents</a> &middot; <a href="../assets/glossary.html">Glossary</a></footer>
+<script src="../assets/glossary.js"></script>
+</body></html>

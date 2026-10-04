@@ -1,0 +1,1632 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Two Pointers — DSA Mastery Notes</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* ── Tokens ──────────────────────────────────────────────────────── */
+:root {
+  --bg:       #0f1117;
+  --bg2:      #171b26;
+  --bg3:      #1e2333;
+  --border:   #2a3148;
+  --fg:       #e2e8f0;
+  --fg2:      #94a3b8;
+  --fg3:      #64748b;
+  --accent:   #6366f1;
+  --accent2:  #818cf8;
+  --green:    #22c55e;
+  --red:      #ef4444;
+  --yellow:   #eab308;
+  --cyan:     #06b6d4;
+  --orange:   #f97316;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg:     #f8fafc;
+    --bg2:    #ffffff;
+    --bg3:    #f1f5f9;
+    --border: #cbd5e1;
+    --fg:     #0f172a;
+    --fg2:    #475569;
+    --fg3:    #94a3b8;
+    --accent: #4f46e5;
+    --accent2:#6366f1;
+    --green:  #16a34a;
+    --red:    #dc2626;
+    --yellow: #d97706;
+    --cyan:   #0891b2;
+    --orange: #ea580c;
+    color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg:     #f8fafc;
+  --bg2:    #ffffff;
+  --bg3:    #f1f5f9;
+  --border: #cbd5e1;
+  --fg:     #0f172a;
+  --fg2:    #475569;
+  --fg3:    #94a3b8;
+  --accent: #4f46e5;
+  --accent2:#6366f1;
+  --green:  #16a34a;
+  --red:    #dc2626;
+  --yellow: #d97706;
+  --cyan:   #0891b2;
+  --orange: #ea580c;
+  color-scheme: light;
+}
+
+/* ── Reset / Base ────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 16px; scroll-behavior: smooth; }
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  line-height: 1.7;
+  padding: env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0);
+}
+img { max-width: 100%; }
+
+/* ── Layout ──────────────────────────────────────────────────────── */
+.page-wrap { max-width: 960px; margin: 0 auto; padding: 0 20px; }
+
+/* ── Top bar ─────────────────────────────────────────────────────── */
+.topbar {
+  position: sticky;
+  top: env(safe-area-inset-top, 0);
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  z-index: 100;
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.topbar-title { font-size: .85rem; font-weight: 600; color: var(--fg2); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.theme-btn {
+  background: var(--bg3); border: 1px solid var(--border);
+  color: var(--fg2); border-radius: 6px; padding: 4px 10px;
+  font-size: .75rem; cursor: pointer; white-space: nowrap;
+}
+.theme-btn:hover { color: var(--fg); }
+
+/* ── Nav ─────────────────────────────────────────────────────────── */
+.nav-tabs {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  padding: 16px 20px; border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  position: sticky; top: calc(env(safe-area-inset-top,0) + 45px);
+  z-index: 99;
+}
+.nav-tab {
+  background: var(--bg3); border: 1px solid var(--border);
+  color: var(--fg2); border-radius: 6px; padding: 5px 12px;
+  font-size: .78rem; cursor: pointer; font-weight: 500;
+  transition: all .15s;
+}
+.nav-tab:hover, .nav-tab.active {
+  background: var(--accent); border-color: var(--accent);
+  color: #fff;
+}
+
+/* ── Sections ────────────────────────────────────────────────────── */
+.section { display: none; padding: 32px 20px 64px; }
+.section.active { display: block; }
+
+/* ── Typography ──────────────────────────────────────────────────── */
+h1 { font-size: 2rem; font-weight: 700; line-height: 1.2; margin-bottom: 8px; text-wrap: balance; }
+h2 { font-size: 1.4rem; font-weight: 700; margin: 36px 0 12px; color: var(--accent2); text-wrap: balance; }
+h3 { font-size: 1.1rem; font-weight: 600; margin: 24px 0 8px; color: var(--fg); text-wrap: balance; }
+h4 { font-size: .95rem; font-weight: 600; margin: 16px 0 6px; color: var(--fg2); }
+p  { margin-bottom: 14px; }
+ul, ol { margin: 0 0 14px 20px; }
+li { margin-bottom: 6px; }
+strong { color: var(--fg); }
+em { color: var(--accent2); font-style: normal; font-weight: 500; }
+
+/* ── Hero ────────────────────────────────────────────────────────── */
+.hero {
+  background: linear-gradient(135deg, #1e2333 0%, #171b26 60%, #13111e 100%);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 32px;
+  margin-bottom: 32px;
+  position: relative;
+  overflow: hidden;
+}
+.hero::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse at 10% 50%, rgba(99,102,241,.12) 0%, transparent 60%);
+  pointer-events: none;
+}
+.hero-tag { font-size: .72rem; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--accent2); margin-bottom: 10px; }
+.hero h1 { color: var(--fg); }
+.hero p { color: var(--fg2); margin-bottom: 0; }
+.hero-meta { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 18px; }
+.hero-badge {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 20px; padding: 4px 12px; font-size: .78rem; color: var(--fg2);
+}
+.hero-badge span { color: var(--accent2); font-weight: 600; }
+
+/* ── Cards ───────────────────────────────────────────────────────── */
+.card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 20px; margin-bottom: 16px;
+}
+.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-bottom: 24px; }
+.card-sm { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+.card-sm h4 { margin-top: 0; }
+
+.pill-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.pill {
+  border-radius: 20px; padding: 3px 10px; font-size: .75rem; font-weight: 600;
+  background: var(--bg3); border: 1px solid var(--border); color: var(--fg2);
+}
+.pill.green  { background: rgba(34,197,94,.1); border-color: rgba(34,197,94,.3); color: var(--green); }
+.pill.blue   { background: rgba(99,102,241,.1); border-color: rgba(99,102,241,.3); color: var(--accent2); }
+.pill.yellow { background: rgba(234,179,8,.1);  border-color: rgba(234,179,8,.3);  color: var(--yellow); }
+.pill.red    { background: rgba(239,68,68,.1);  border-color: rgba(239,68,68,.3);  color: var(--red); }
+.pill.cyan   { background: rgba(6,182,212,.1);  border-color: rgba(6,182,212,.3);  color: var(--cyan); }
+.pill.orange { background: rgba(249,115,22,.1); border-color: rgba(249,115,22,.3); color: var(--orange); }
+
+/* ── Code ────────────────────────────────────────────────────────── */
+pre, code { font-family: 'JetBrains Mono', 'Fira Mono', monospace; }
+code { background: var(--bg3); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; font-size: .82em; color: var(--cyan); }
+pre {
+  background: #0a0c14; border: 1px solid var(--border); border-radius: 8px;
+  padding: 18px; overflow-x: auto; margin: 12px 0 16px;
+  font-size: .82rem; line-height: 1.65;
+  color: #e2e8f0;
+}
+pre .c { color: var(--fg3); font-style: italic; }
+pre .k { color: #c792ea; }
+pre .s { color: #c3e88d; }
+pre .n { color: #82aaff; }
+pre .m { color: #f78c6c; }
+pre .o { color: var(--accent2); }
+pre .t { color: var(--cyan); }
+
+/* ── Language tabs for code ──────────────────────────────────────── */
+.code-block { margin: 12px 0 20px; }
+.lang-tabs { display: flex; gap: 0; margin-bottom: -1px; }
+.lang-tab {
+  padding: 6px 14px; font-size: .78rem; font-weight: 600;
+  background: var(--bg3); border: 1px solid var(--border);
+  color: var(--fg3); cursor: pointer; border-radius: 6px 6px 0 0;
+  margin-right: 3px;
+}
+.lang-tab.active { background: #0a0c14; border-bottom-color: #0a0c14; color: var(--fg); }
+.lang-pane { display: none; }
+.lang-pane.active { display: block; }
+.lang-pane pre { border-radius: 0 8px 8px 8px; margin-top: 0; }
+
+/* ── Complexity table ────────────────────────────────────────────── */
+.cmp-table { width: 100%; border-collapse: collapse; margin: 12px 0 20px; font-size: .84rem; }
+.cmp-table th, .cmp-table td { padding: 8px 12px; text-align: left; border: 1px solid var(--border); }
+.cmp-table th { background: var(--bg3); color: var(--fg2); font-weight: 600; }
+.cmp-table tr:nth-child(even) td { background: var(--bg2); }
+.cmp-table tr:nth-child(odd) td { background: var(--bg); }
+.good { color: var(--green); font-weight: 600; }
+.bad  { color: var(--red);   font-weight: 600; }
+.ok   { color: var(--yellow); font-weight: 600; }
+
+/* ── Algorithm box ───────────────────────────────────────────────── */
+.algo-box {
+  background: rgba(99,102,241,.07); border: 1px solid rgba(99,102,241,.25);
+  border-radius: 8px; padding: 16px 20px; margin: 10px 0 16px;
+}
+.algo-box .algo-label { font-size: .72rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--accent2); margin-bottom: 8px; }
+.algo-box ol { margin-left: 18px; }
+.algo-box li { margin-bottom: 4px; font-size: .9rem; }
+
+/* ── Problem cards ───────────────────────────────────────────────── */
+.problem-header {
+  display: flex; align-items: flex-start; gap: 14px; margin-bottom: 14px;
+}
+.problem-num {
+  min-width: 36px; height: 36px; border-radius: 8px;
+  background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .9rem; font-weight: 700; flex-shrink: 0;
+}
+.problem-num.p2 { background: var(--cyan); }
+.problem-num.p3 { background: var(--green); }
+.problem-num.p4 { background: var(--orange); }
+.problem-num.p5 { background: var(--yellow); color: #000; }
+.problem-num.p6 { background: #ec4899; }
+.problem-title { font-size: 1.15rem; font-weight: 700; }
+.problem-desc { font-size: .87rem; color: var(--fg2); margin-top: 2px; }
+
+/* ── Pattern map table ───────────────────────────────────────────── */
+.pattern-map { width: 100%; border-collapse: collapse; margin: 12px 0 24px; font-size: .84rem; }
+.pattern-map th { background: var(--bg3); padding: 10px 14px; text-align: left; border: 1px solid var(--border); font-weight: 600; color: var(--fg2); }
+.pattern-map td { padding: 9px 14px; border: 1px solid var(--border); }
+.pattern-map tr:nth-child(odd) td  { background: var(--bg); }
+.pattern-map tr:nth-child(even) td { background: var(--bg2); }
+
+/* ── Checklist ───────────────────────────────────────────────────── */
+.checklist { list-style: none; margin: 0 0 20px; padding: 0; }
+.checklist li {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 8px 0; border-bottom: 1px solid var(--border); font-size: .9rem;
+}
+.checklist li:last-child { border: none; }
+.check-icon { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--border); flex-shrink: 0; margin-top: 2px; cursor: pointer; }
+.check-icon.done { background: var(--green); border-color: var(--green); }
+
+/* ── Callout ─────────────────────────────────────────────────────── */
+.callout {
+  border-left: 3px solid var(--accent); background: var(--bg2);
+  border-radius: 0 8px 8px 0; padding: 14px 18px; margin: 12px 0 20px;
+  font-size: .9rem;
+}
+.callout.warn { border-color: var(--yellow); }
+.callout.danger { border-color: var(--red); }
+.callout.tip { border-color: var(--green); }
+.callout strong { display: block; margin-bottom: 4px; }
+
+/* ── Progress tracker ────────────────────────────────────────────── */
+.progress-wrap { margin: 20px 0; }
+.progress-bar-outer { background: var(--bg3); border-radius: 99px; height: 8px; margin: 6px 0; }
+.progress-bar-inner { height: 8px; border-radius: 99px; background: var(--green); transition: width .3s; }
+.progress-label { font-size: .8rem; color: var(--fg2); display: flex; justify-content: space-between; }
+
+@media (max-width: 600px) {
+  h1 { font-size: 1.5rem; }
+  h2 { font-size: 1.2rem; }
+  .hero { padding: 20px; }
+  .card-grid { grid-template-columns: 1fr; }
+  .problem-num { min-width: 28px; height: 28px; font-size: .8rem; }
+}
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <div class="topbar-title">📌 Two Pointers — DSA Mastery Notes</div>
+  <button class="theme-btn" onclick="toggleTheme()">Toggle Theme</button>
+</div>
+
+<!-- NAV TABS -->
+<nav class="nav-tabs" id="nav">
+  <button class="nav-tab active" onclick="show('concepts',this)">Concepts</button>
+  <button class="nav-tab" onclick="show('patterns',this)">6 Patterns</button>
+  <button class="nav-tab" onclick="show('problems',this)">12 Problems</button>
+  <button class="nav-tab" onclick="show('recognition',this)">Recognition</button>
+  <button class="nav-tab" onclick="show('templates',this)">Templates</button>
+  <button class="nav-tab" onclick="show('mistakes',this)">Mistakes</button>
+  <button class="nav-tab" onclick="show('checklist',this)">Checklist</button>
+  <button class="nav-tab" onclick="show('method',this)">Method</button>
+</nav>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SECTION 1 — CONCEPTS
+════════════════════════════════════════════════════════════════════ -->
+<section class="section active" id="concepts">
+<div class="page-wrap">
+
+  <div class="hero">
+    <div class="hero-tag">DSA Mastery Series · Topic 3 of 13</div>
+    <h1>Two Pointers</h1>
+    <p>A <strong>movement strategy</strong>, not a data structure. Two variables track positions inside a sequence; their coordinated movement eliminates candidate pairs without reexamining them.</p>
+    <div class="hero-meta">
+      <div class="hero-badge">Prev: <span>Hash Maps</span></div>
+      <div class="hero-badge">Next: <span>Sliding Window</span></div>
+      <div class="hero-badge">Problems: <span>12 covered</span></div>
+      <div class="hero-badge">Patterns: <span>6 shapes</span></div>
+    </div>
+  </div>
+
+  <h2>§1 — First Principles</h2>
+  <p>The core insight: brute force on sequences is <strong>O(n²)</strong> because it considers every pair. Two pointers achieve <strong>O(n)</strong> by maintaining an <em>elimination argument</em> — every pointer move discards an entire row or column of candidate pairs that cannot possibly be the answer.</p>
+
+  <div class="callout tip">
+    <strong>The Treasure-Hunt Analogy</strong>
+    "If I say find treasure anywhere, you're lost. If I say the treasure is green, you immediately know what to look for." Two Pointers give you that starting narrowing — two fixed limits. The only legal moves shrink the space. You are guaranteed to cover all possibilities in one pass.
+  </div>
+
+  <div class="card-grid">
+    <div class="card-sm">
+      <h4>What it is</h4>
+      <p style="font-size:.88rem;color:var(--fg2)">Two index variables that move through a sequence (array, string, linked list) in a coordinated way. Movement rules are chosen so no pointer ever moves backward — giving amortized O(n).</p>
+    </div>
+    <div class="card-sm">
+      <h4>Why it works</h4>
+      <p style="font-size:.88rem;color:var(--fg2)">Each move discards candidates the array's ordering tells us cannot be the answer. You exploit sortedness (or a structural property) to skip the work a nested loop would do.</p>
+    </div>
+    <div class="card-sm">
+      <h4>Core requirement</h4>
+      <p style="font-size:.88rem;color:var(--fg2)">A <strong>monotone decision</strong>: "if my current pair fails in direction X, no pair with the same left but a further-left right could succeed." Without monotonicity two pointers may miss answers.</p>
+    </div>
+  </div>
+
+  <h2>§2 — Python Mechanics</h2>
+  <div class="card">
+    <h4>Idiomatic Python patterns</h4>
+    <pre><code class="n">left</code>, <code class="n">right</code> = 0, len(arr) - 1       <span class="c"># initialise both</span>
+while left &lt; right:                        <span class="c"># converging guard</span>
+    if condition: left  += 1
+    else:         right -= 1
+
+<span class="c"># Swap without temp variable</span>
+arr[left], arr[right] = arr[right], arr[left]
+
+<span class="c"># Skip duplicates (after recording result)</span>
+while left &lt; right and arr[left]  == arr[left  + 1]: left  += 1
+while left &lt; right and arr[right] == arr[right - 1]: right -= 1
+
+<span class="c"># Slow-fast on linked list</span>
+slow = fast = head
+while fast and fast.next:
+    slow = slow.next
+    fast = fast.next.next</pre>
+    <ul style="font-size:.87rem;margin-top:8px;">
+      <li><code>s[left].isalnum()</code> / <code>.lower()</code> — palindrome skip</li>
+      <li><code>list(s)</code> to mutate a string, join back with <code>""</code></li>
+      <li><strong>Bug alert:</strong> <code>sorted(nums)</code> returns a new list; <code>nums.sort()</code> mutates in place and returns <code>None</code> — never assign its result</li>
+    </ul>
+  </div>
+
+  <h2>§3 — Complexity</h2>
+  <table class="cmp-table">
+    <thead><tr><th>Shape</th><th>Time</th><th>Space</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td>Converging (sorted)</td><td class="good">O(n)</td><td class="good">O(1)</td><td>Each pointer moves inward at most n times total</td></tr>
+      <tr><td>Read / Write</td><td class="good">O(n)</td><td class="good">O(1)</td><td>Write pointer ≤ Read pointer; read sweeps once</td></tr>
+      <tr><td>Two Sequences</td><td class="good">O(m+n)</td><td class="good">O(1)*</td><td>Each pointer sweeps its array at most once (*+output)</td></tr>
+      <tr><td>Sort + Anchor + Converge</td><td class="ok">O(n² ) for 3Sum<br>O(nᵏ⁻¹) for k-Sum</td><td class="good">O(n)</td><td>Sort + outer loop(s) + one inner linear pass</td></tr>
+      <tr><td>Slow / Fast (linked list)</td><td class="good">O(n)</td><td class="good">O(1)</td><td>Fast reaches null when slow reaches middle</td></tr>
+      <tr><td>Dutch National Flag</td><td class="good">O(n)</td><td class="good">O(1)</td><td>Each element classified exactly once</td></tr>
+    </tbody>
+  </table>
+  <div class="callout warn">
+    <strong>Nested while ≠ O(n²)</strong> When two pointers only move forward (never reset), the total number of moves across all inner-loop iterations is bounded by n. The loops appear nested but the amortised cost is O(n).
+  </div>
+
+</div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SECTION 2 — 6 PATTERNS
+════════════════════════════════════════════════════════════════════ -->
+<section class="section" id="patterns">
+<div class="page-wrap">
+
+  <h2>The 6 Two-Pointer Shapes</h2>
+  <p>Every two-pointer problem fits one of these shapes. Recognising the shape immediately gives you the pointer initialisation and the termination condition.</p>
+
+  <!-- Pattern 1 -->
+  <div class="card">
+    <div class="pill-row"><span class="pill blue">Pattern 1</span><span class="pill">Sorted array required</span></div>
+    <h3>Converging (Opposite Ends)</h3>
+    <p>Start <code>left = 0</code>, <code>right = n−1</code>. Advance the pointer whose side gives you a strictly better chance of satisfying the condition. Stop when they cross.</p>
+    <p><strong>Elimination argument:</strong> if <code>arr[left]+arr[right] &lt; target</code>, <em>every</em> pair using <code>arr[left]</code> with a smaller right value also fails — so advance <code>left</code>.</p>
+    <p><strong>Problems:</strong> Two Sum II, Container With Most Water, Valid Palindrome, Reverse String, reverse a section, partition 0s&amp;1s</p>
+    <pre>left, right = 0, len(arr) - 1
+while left &lt; right:
+    if check(arr[left], arr[right]):  # found
+        ...
+    elif need_bigger:
+        left  += 1
+    else:
+        right -= 1</pre>
+  </div>
+
+  <!-- Pattern 2 -->
+  <div class="card">
+    <div class="pill-row"><span class="pill cyan">Pattern 2</span><span class="pill">In-place write</span></div>
+    <h3>Read / Write (Same Direction)</h3>
+    <p><code>write</code> trails <code>read</code>. <code>read</code> sweeps every element; <code>write</code> advances only when the element deserves to stay. Invariant: <code>arr[0..write-1]</code> is always the filtered result.</p>
+    <p><strong>Problems:</strong> Remove Duplicates, Remove Element, Move Zeros</p>
+    <pre>write = 0
+for read in range(len(arr)):
+    if keep(arr[read]):
+        arr[write] = arr[read]
+        write += 1</pre>
+  </div>
+
+  <!-- Pattern 3 -->
+  <div class="card">
+    <div class="pill-row"><span class="pill green">Pattern 3</span><span class="pill">Two sorted sequences</span></div>
+    <h3>Two Sequences (One Pointer Each)</h3>
+    <p><code>i</code> walks array A, <code>j</code> walks array B. Compare <code>A[i]</code> vs <code>B[j]</code>; advance the pointer pointing at the smaller (or equal) value.</p>
+    <p><strong>Problems:</strong> Merge Two Sorted Arrays, Union, Intersection</p>
+    <pre>i = j = 0
+while i &lt; len(a) and j &lt; len(b):
+    if a[i] &lt;= b[j]:
+        process(a[i]); i += 1
+    else:
+        process(b[j]); j += 1
+# drain whichever list is non-empty</pre>
+  </div>
+
+  <!-- Pattern 4 -->
+  <div class="card">
+    <div class="pill-row"><span class="pill orange">Pattern 4</span><span class="pill">Sort first</span></div>
+    <h3>Sort + Anchor + Converge (k-Sum)</h3>
+    <p>Sort the array. Fix k−2 anchors with outer loops. Run a converging two-pointer pass on the remaining subarray. Skip duplicates at every level to avoid duplicate triplets/quadruplets.</p>
+    <p><strong>Time:</strong> O(nᵏ⁻¹) — sort is dominated by the outer loops.</p>
+    <p><strong>Problems:</strong> 3Sum, 4Sum, k-Sum</p>
+    <pre>nums.sort()
+for i in range(n - 2):
+    if i > 0 and nums[i] == nums[i-1]: continue  # skip dup anchor
+    left, right = i+1, n-1
+    while left &lt; right:
+        total = nums[i] + nums[left] + nums[right]
+        if   total == 0: record(); skip_dups(); advance()
+        elif total &lt;  0: left  += 1
+        else:            right -= 1</pre>
+  </div>
+
+  <!-- Pattern 5 -->
+  <div class="card">
+    <div class="pill-row"><span class="pill yellow">Pattern 5</span><span class="pill">Greedy side choice</span></div>
+    <h3>Move the Limiting Side (Greedy)</h3>
+    <p>Area / capacity is limited by the shorter side. Moving the longer side can only decrease width; only moving the shorter side can possibly increase height enough to compensate.</p>
+    <p><strong>Problems:</strong> Container With Most Water</p>
+    <pre>left, right = 0, n - 1
+best = 0
+while left &lt; right:
+    best = max(best, min(h[left], h[right]) * (right - left))
+    if h[left] &lt; h[right]: left  += 1
+    else:                   right -= 1</pre>
+  </div>
+
+  <!-- Pattern 6 -->
+  <div class="card">
+    <div class="pill-row"><span class="pill red">Pattern 6</span><span class="pill">3 partitions, 1 pass</span></div>
+    <h3>Dutch National Flag (3-Way Partition)</h3>
+    <p>Three regions: <em>[0..low−1]</em> all 0s, <em>[low..mid−1]</em> all 1s, <em>[high+1..n−1]</em> all 2s. <code>mid</code> is the exploration frontier. Crucially, when you swap <code>mid</code> with <code>high</code>, you don't advance <code>mid</code> — you don't yet know what came back from the right.</p>
+    <pre>low = mid = 0
+high = n - 1
+while mid &lt;= high:
+    if   nums[mid] == 0: swap(low,mid);  low++;  mid++
+    elif nums[mid] == 1:                         mid++
+    else:                swap(mid,high); high--  # NOT mid++</pre>
+  </div>
+
+  <!-- Bonus: Slow/Fast -->
+  <div class="card">
+    <div class="pill-row"><span class="pill blue">Bonus</span><span class="pill">Linked list</span></div>
+    <h3>Slow / Fast (Floyd's Tortoise &amp; Hare)</h3>
+    <p>Both start at <code>head</code>. Slow moves 1 step; Fast moves 2 steps. Because Fast covers twice the distance, Slow is always at the halfway point when Fast reaches the end. In a cycle, Fast "laps" Slow — they are guaranteed to meet because in a closed loop a faster runner always catches the slower one.</p>
+    <pre>slow = fast = head
+while fast and fast.next:
+    slow = slow.next
+    fast = fast.next.next
+    if slow is fast: return True  # cycle detected
+# If no cycle: slow is the middle node</pre>
+  </div>
+
+</div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SECTION 3 — 12 PROBLEMS
+════════════════════════════════════════════════════════════════════ -->
+<section class="section" id="problems">
+<div class="page-wrap">
+  <h2>All 12 Problems — Brute Force → Optimised</h2>
+  <p>Every problem shows: (1) plain-English algorithm, (2) brute-force Python + Java, (3) two-pointer Python + Java, (4) complexity comparison.</p>
+
+  <!-- ── P1: Two Sum II ─────────────────────────────────────────── -->
+  <div class="card" id="p-two-sum">
+    <div class="problem-header">
+      <div class="problem-num">1</div>
+      <div>
+        <div class="problem-title">Two Sum II</div>
+        <div class="problem-desc">Given a <strong>sorted</strong> array and a target, return 1-indexed pair that sums to target.</div>
+      </div>
+    </div>
+    <div class="pill-row"><span class="pill blue">Converging</span><span class="pill">LeetCode 167</span></div>
+
+    <div class="algo-box">
+      <div class="algo-label">Brute-Force Algorithm</div>
+      <ol>
+        <li>For every pair (i, j) with i &lt; j, check if nums[i] + nums[j] == target.</li>
+        <li>Return [i+1, j+1] on the first match.</li>
+      </ol>
+    </div>
+    <div class="algo-box">
+      <div class="algo-label">Two-Pointer Algorithm</div>
+      <ol>
+        <li>Place left at index 0, right at index n−1.</li>
+        <li>Compute sum = nums[left] + nums[right].</li>
+        <li>If sum == target → return [left+1, right+1].</li>
+        <li>If sum &lt; target → advance left (need bigger left value).</li>
+        <li>If sum &gt; target → retreat right (need smaller right value).</li>
+        <li>Repeat until left ≥ right.</li>
+      </ol>
+    </div>
+
+    <div class="code-block">
+      <div class="lang-tabs">
+        <button class="lang-tab active" onclick="switchLang(this,'brute-p1')">Brute — Python</button>
+        <button class="lang-tab" onclick="switchLang(this,'brute-p1-java')">Brute — Java</button>
+        <button class="lang-tab" onclick="switchLang(this,'opt-p1')">Optimal — Python</button>
+        <button class="lang-tab" onclick="switchLang(this,'opt-p1-java')">Optimal — Java</button>
+      </div>
+      <div class="lang-pane active" id="brute-p1">
+<pre><span class="k">def</span> <span class="n">two_sum_brute</span>(nums, target):          <span class="c"># O(n²) time, O(1) space</span>
+    n = len(nums)
+    <span class="k">for</span> i <span class="k">in</span> range(n):
+        <span class="k">for</span> j <span class="k">in</span> range(i + 1, n):
+            <span class="k">if</span> nums[i] + nums[j] == target:
+                <span class="k">return</span> [i + 1, j + 1]
+    <span class="k">return</span> []</pre>
+      </div>
+      <div class="lang-pane" id="brute-p1-java">
+<pre><span class="k">public static</span> <span class="t">int</span>[] twoSumBrute(<span class="t">int</span>[] nums, <span class="t">int</span> target) {
+    <span class="k">for</span> (<span class="t">int</span> i = 0; i &lt; nums.length; i++)
+        <span class="k">for</span> (<span class="t">int</span> j = i + 1; j &lt; nums.length; j++)
+            <span class="k">if</span> (nums[i] + nums[j] == target)
+                <span class="k">return new</span> <span class="t">int</span>[]{i + 1, j + 1};
+    <span class="k">return new</span> <span class="t">int</span>[]{};
+}</pre>
+      </div>
+      <div class="lang-pane" id="opt-p1">
+<pre><span class="k">def</span> <span class="n">two_sum</span>(nums, target):               <span class="c"># O(n) time, O(1) space</span>
+    left, right = 0, len(nums) - 1
+    <span class="k">while</span> left &lt; right:
+        s = nums[left] + nums[right]
+        <span class="k">if</span>   s == target: <span class="k">return</span> [left + 1, right + 1]
+        <span class="k">elif</span> s &lt;  target: left  += 1
+        <span class="k">else</span>:             right -= 1
+    <span class="k">return</span> []</pre>
+      </div>
+      <div class="lang-pane" id="opt-p1-java">
+<pre><span class="k">public static</span> <span class="t">int</span>[] twoSum(<span class="t">int</span>[] nums, <span class="t">int</span> target) {
+    <span class="t">int</span> left = 0, right = nums.length - 1;
+    <span class="k">while</span> (left &lt; right) {
+        <span class="t">int</span> s = nums[left] + nums[right];
+        <span class="k">if</span>      (s == target) <span class="k">return new</span> <span class="t">int</span>[]{left+1, right+1};
+        <span class="k">else if</span> (s &lt;  target) left++;
+        <span class="k">else</span>                  right--;
+    }
+    <span class="k">return new</span> <span class="t">int</span>[]{};
+}</pre>
+      </div>
+    </div>
+    <table class="cmp-table"><thead><tr><th>Approach</th><th>Time</th><th>Space</th></tr></thead>
+    <tbody><tr><td>Brute Force</td><td class="bad">O(n²)</td><td class="good">O(1)</td></tr>
+    <tr><td>Two Pointers</td><td class="good">O(n)</td><td class="good">O(1)</td></tr></tbody></table>
+  </div>
+
+  <!-- ── P2: 3Sum ───────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="problem-header">
+      <div class="problem-num p2">2</div>
+      <div>
+        <div class="problem-title">3Sum</div>
+        <div class="problem-desc">Find all unique triplets that sum to zero.</div>
+      </div>
+    </div>
+    <div class="pill-row"><span class="pill orange">Sort + Anchor + Converge</span><span class="pill">LeetCode 15</span></div>
+
+    <div class="algo-box">
+      <div class="algo-label">Two-Pointer Algorithm</div>
+      <ol>
+        <li>Sort the array.</li>
+        <li>For each anchor index i (skip duplicates):</li>
+        <li>&nbsp;&nbsp;Run converging two-pointer on nums[i+1..n−1] looking for sum = −nums[i].</li>
+        <li>&nbsp;&nbsp;When a triplet is found, record it, then skip all duplicate left and right values before advancing both pointers.</li>
+      </ol>
+    </div>
+
+    <div class="code-block">
+      <div class="lang-tabs">
+        <button class="lang-tab active" onclick="switchLang(this,'opt-p2')">Optimal — Python</button>
+        <button class="lang-tab" onclick="switchLang(this,'opt-p2-java')">Optimal — Java</button>
+      </div>
+      <div class="lang-pane active" id="opt-p2">
+<pre><span class="k">def</span> <span class="n">three_sum</span>(nums):                      <span class="c"># O(n²) time, O(n) for sort</span>
+    nums.sort()
+    result, n = [], len(nums)
+    <span class="k">for</span> i <span class="k">in</span> range(n - 2):
+        <span class="k">if</span> i > 0 <span class="k">and</span> nums[i] == nums[i-1]: <span class="k">continue</span>
+        left, right = i + 1, n - 1
+        <span class="k">while</span> left &lt; right:
+            total = nums[i] + nums[left] + nums[right]
+            <span class="k">if</span> total == 0:
+                result.append([nums[i], nums[left], nums[right]])
+                <span class="k">while</span> left &lt; right <span class="k">and</span> nums[left]  == nums[left+1]:  left  += 1
+                <span class="k">while</span> left &lt; right <span class="k">and</span> nums[right] == nums[right-1]: right -= 1
+                left += 1; right -= 1
+            <span class="k">elif</span> total &lt; 0: left  += 1
+            <span class="k">else</span>:           right -= 1
+    <span class="k">return</span> result</pre>
+      </div>
+      <div class="lang-pane" id="opt-p2-java">
+<pre><span class="k">public static</span> List&lt;List&lt;Integer&gt;&gt; threeSum(<span class="t">int</span>[] nums) {
+    Arrays.sort(nums);
+    List&lt;List&lt;Integer&gt;&gt; result = <span class="k">new</span> ArrayList&lt;&gt;();
+    <span class="t">int</span> n = nums.length;
+    <span class="k">for</span> (<span class="t">int</span> i = 0; i &lt; n - 2; i++) {
+        <span class="k">if</span> (i > 0 &amp;&amp; nums[i] == nums[i-1]) <span class="k">continue</span>;
+        <span class="t">int</span> left = i+1, right = n-1;
+        <span class="k">while</span> (left &lt; right) {
+            <span class="t">int</span> total = nums[i] + nums[left] + nums[right];
+            <span class="k">if</span> (total == 0) {
+                result.add(Arrays.asList(nums[i], nums[left], nums[right]));
+                <span class="k">while</span> (left &lt; right &amp;&amp; nums[left]  == nums[left+1])  left++;
+                <span class="k">while</span> (left &lt; right &amp;&amp; nums[right] == nums[right-1]) right--;
+                left++; right--;
+            } <span class="k">else if</span> (total &lt; 0) left++;
+              <span class="k">else</span>                right--;
+        }
+    }
+    <span class="k">return</span> result;
+}</pre>
+      </div>
+    </div>
+    <table class="cmp-table"><thead><tr><th>Approach</th><th>Time</th><th>Space</th></tr></thead>
+    <tbody><tr><td>Brute Force (triple loop + set)</td><td class="bad">O(n³)</td><td class="ok">O(n)</td></tr>
+    <tr><td>Sort + Anchor + Two Pointers</td><td class="ok">O(n²)</td><td class="ok">O(n)</td></tr></tbody></table>
+  </div>
+
+  <!-- ── P3: Merge Two Sorted Arrays ───────────────────────────── -->
+  <div class="card">
+    <div class="problem-header">
+      <div class="problem-num p3">3</div>
+      <div>
+        <div class="problem-title">Merge Two Sorted Arrays</div>
+        <div class="problem-desc">Produce a single sorted array from two sorted inputs.</div>
+      </div>
+    </div>
+    <div class="pill-row"><span class="pill green">Two Sequences</span></div>
+    <div class="algo-box">
+      <div class="algo-label">Two-Pointer Algorithm</div>
+      <ol>
+        <li>i=0, j=0. Compare A[i] vs B[j]; append the smaller, advance its pointer.</li>
+        <li>When one array is exhausted, append the rest of the other.</li>
+      </ol>
+    </div>
+    <div class="code-block">
+      <div class="lang-tabs">
+        <button class="lang-tab active" onclick="switchLang(this,'opt-p3')">Python</button>
+        <button class="lang-tab" onclick="switchLang(this,'opt-p3-java')">Java</button>
+      </div>
+      <div class="lang-pane active" id="opt-p3">
+<pre><span class="k">def</span> <span class="n">merge_sorted</span>(a, b):                   <span class="c"># O(m+n) time, O(m+n) space</span>
+    result = []
+    i = j = 0
+    <span class="k">while</span> i &lt; len(a) <span class="k">and</span> j &lt; len(b):
+        <span class="k">if</span> a[i] &lt;= b[j]: result.append(a[i]); i += 1
+        <span class="k">else</span>:            result.append(b[j]); j += 1
+    result.extend(a[i:]); result.extend(b[j:])
+    <span class="k">return</span> result</pre>
+      </div>
+      <div class="lang-pane" id="opt-p3-java">
+<pre><span class="k">public static</span> <span class="t">int</span>[] mergeSorted(<span class="t">int</span>[] a, <span class="t">int</span>[] b) {
+    <span class="t">int</span>[] res = <span class="k">new</span> <span class="t">int</span>[a.length + b.length];
+    <span class="t">int</span> i = 0, j = 0, k = 0;
+    <span class="k">while</span> (i &lt; a.length &amp;&amp; j &lt; b.length)
+        res[k++] = (a[i] &lt;= b[j]) ? a[i++] : b[j++];
+    <span class="k">while</span> (i &lt; a.length) res[k++] = a[i++];
+    <span class="k">while</span> (j &lt; b.length) res[k++] = b[j++];
+    <span class="k">return</span> res;
+}</pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── P4: Union ─────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="problem-header">
+      <div class="problem-num p4">4</div>
+      <div>
+        <div class="problem-title">Union of Two Sorted Arrays</div>
+        <div class="problem-desc">Merge without duplicates.</div>
+      </div>
+    </div>
+    <div class="pill-row"><span class="pill green">Two Sequences</span></div>
+    <div class="code-block">
+      <div class="lang-tabs">
+        <button class="lang-tab active" onclick="switchLang(this,'opt-p4')">Python</button>
+        <button class="lang-tab" onclick="switchLang(this,'opt-p4-java')">Java</button>
+      </div>
+      <div class="lang-pane active" id="opt-p4">
+<pre><span class="k">def</span> <span class="n">union</span>(a, b):
+    result = []
+    i = j = 0
+    <span class="k">while</span> i &lt; len(a) <span class="k">and</span> j &lt; len(b):
+        <span class="k">if</span>   a[i] &lt; b[j]: val = a[i]; i += 1
+        <span class="k">elif</span> b[j] &lt; a[i]: val = b[j]; j += 1
+        <span class="k">else</span>:             val = a[i]; i += 1; j += 1
+        <span class="k">if not</span> result <span class="k">or</span> result[-1] != val: result.append(val)
+    <span class="k">for</span> arr <span class="k">in</span> (a[i:], b[j:]):
+        <span class="k">for</span> val <span class="k">in</span> arr:
+            <span class="k">if not</span> result <span class="k">or</span> result[-1] != val: result.append(val)
+    <span class="k">return</span> result</pre>
+      </div>
+      <div class="lang-pane" id="opt-p4-java">
+<pre><span class="k">public static</span> List&lt;Integer&gt; union(<span class="t">int</span>[] a, <span class="t">int</span>[] b) {
+    List&lt;Integer&gt; res = <span class="k">new</span> ArrayList&lt;&gt;();
+    <span class="t">int</span> i = 0, j = 0;
+    <span class="k">while</span> (i &lt; a.length &amp;&amp; j &lt; b.length) {
+        <span class="t">int</span> val;
+        <span class="k">if</span>      (a[i] &lt; b[j])  val = a[i++];
+        <span class="k">else if</span> (b[j] &lt; a[i])  val = b[j++];
+        <span class="k">else</span>                  { val = a[i++]; j++; }
+        <span class="k">if</span> (res.isEmpty() || res.get(res.size()-1) != val) res.add(val);
+    }
+    <span class="c">// drain remaining</span>
+    <span class="k">while</span> (i &lt; a.length) { <span class="k">if</span>(res.isEmpty()||res.get(res.size()-1)!=a[i]) res.add(a[i]); i++; }
+    <span class="k">while</span> (j &lt; b.length) { <span class="k">if</span>(res.isEmpty()||res.get(res.size()-1)!=b[j]) res.add(b[j]); j++; }
+    <span class="k">return</span> res;
+}</pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── P5: Intersection ──────────────────────────────────────── -->
+  <div class="card">
+    <div class="problem-header">
+      <div class="problem-num p5">5</div>
+      <div>
+        <div class="problem-title">Intersection of Two Sorted Arrays</div>
+        <div class="problem-desc">Elements common to both, no duplicates.</div>
+      </div>
+    </div>
+    <div class="pill-row"><span class="pill green">Two Sequences</span><span class="pill">LeetCode 349</span></div>
+    <div class="code-block">
+      <div class="lang-tabs">
+        <button class="lang-tab active" onclick="switchLang(this,'opt-p5')">Python</button>
+        <button class="lang-tab" onclick="switchLang(this,'opt-p5-java')">Java</button>
+      </div>
+      <div class="lang-pane active" id="opt-p5">
+<pre><span class="k">def</span> <span class="n">intersection</span>(a, b):
+    result = []
+    i = j = 0
+    <span class="k">while</span> i &lt; len(a) <span class="k">and</span> j &lt; len(b):
+        <span class="k">if</span> a[i] == b[j]:
+            <span class="k">if not</span> result <span class="k">or</span> result[-1] != a[i]: result.append(a[i])
+            i += 1; j += 1
+        <span class="k">elif</span> a[i] &lt; b[j]: i += 1
+        <span class="k">else</span>:             j += 1
+    <span class="k">return</span> result</pre>
+      </div>
+      <div class="lang-pane" id="opt-p5-java">
+<pre><span class="k">public static</span> List&lt;Integer&gt; intersection(<span class="t">int</span>[] a, <span class="t">int</span>[] b) {
+    List&lt;Integer&gt; res = <span class="k">new</span> ArrayList&lt;&gt;();
+    <span class="t">int</span> i = 0, j = 0;
+    <span class="k">while</span> (i &lt; a.length &amp;&amp; j &lt; b.length) {
+        <span class="k">if</span> (a[i] == b[j]) {
+            <span class="k">if</span> (res.isEmpty() || res.get(res.size()-1) != a[i]) res.add(a[i]);
+            i++; j++;
+        } <span class="k">else if</span> (a[i] &lt; b[j]) i++;
+          <span class="k">else</span>                   j++;
+    }
+    <span class="k">return</span> res;
+}</pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── P6: Valid Palindrome ──────────────────────────────────── -->
+  <div class="card">
+    <div class="problem-header">
+      <div class="problem-num p6">6</div>
+      <div>
+        <div class="problem-title">Valid Palindrome</div>
+        <div class="problem-desc">Ignore non-alphanumeric chars; case-insensitive.</div>
+      </div>
+    </div>
+    <div class="pill-row"><span class="pill blue">Converging</span><span class="pill">LeetCode 125</span></div>
+    <div class="code-block">
+      <div class="lang-tabs">
+        <button class="lang-tab active" onclick="switchLang(this,'opt-p6')">Python</button>
+        <button class="lang-tab" onclick="switchLang(this,'opt-p6-java')">Java</button>
+      </div>
+      <div class="lang-pane active" id="opt-p6">
+<pre><span class="k">def</span> <span class="n">is_palindrome</span>(s):                     <span class="c"># O(n) time, O(1) space</span>
+    left, right = 0, len(s) - 1
+    <span class="k">while</span> left &lt; right:
+        <span class="k">while</span> left &lt; right <span class="k">and not</span> s[left].isalnum():  left  += 1
+        <span class="k">while</span> left &lt; right <span class="k">and not</span> s[right].isalnum(): right -= 1
+        <span class="k">if</span> s[left].lower() != s[right].lower(): <span class="k">return False</span>
+        left += 1; right -= 1
+    <span class="k">return True</span></pre>
+      </div>
+      <div class="lang-pane" id="opt-p6-java">
+<pre><span class="k">public static boolean</span> isPalindrome(String s) {
+    <span class="t">int</span> l = 0, r = s.length() - 1;
+    <span class="k">while</span> (l &lt; r) {
+        <span class="k">while</span> (l &lt; r &amp;&amp; !Character.isLetterOrDigit(s.charAt(l))) l++;
+        <span class="k">while</span> (l &lt; r &amp;&amp; !Character.isLetterOrDigit(s.charAt(r))) r--;
+        <span class="k">if</span> (Character.toLowerCase(s.charAt(l)) !=
+            Character.toLowerCase(s.charAt(r))) <span class="k">return false</span>;
+        l++; r--;
+    }
+    <span class="k">return true</span>;
+}</pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── P7: Reverse String ───────────────────────────────────── -->
+  <div class="card">
+    <div class="problem-header">
+      <div class="problem-num">7</div>
+      <div>
+        <div class="problem-title">Reverse String / Reverse Section</div>
+        <div class="problem-desc">In-place reverse of a char array (or a subsection).</div>
+      </div>
+    </div>
+    <div class="pill-row"><span class="pill blue">Converging</span><span class="pill">LeetCode 344</span></div>
+    <div class="code-block">
+      <div class="lang-tabs">
+        <button class="lang-tab active" onclick="switchLang(this,'opt-p7')">Python</button>
+        <button class="lang-tab" onclick="switchLang(this,'opt-p7-java')">Java</button>
+      </div>
+      <div class="lang-pane active" id="opt-p7">
+<pre><span class="k">def</span> <span class="n">reverse_string</span>(s):                    <span class="c"># O(n) time, O(1) space</span>
+    left, right = 0, len(s) - 1
+    <span class="k">while</span> left &lt; right:
+        s[left], s[right] = s[right], s[left]
+        left += 1; right -= 1
+
+<span class="k">def</span> <span class="n">reverse_section</span>(s, lo, hi):           <span class="c"># reverse s[lo..hi] inclusive</span>
+    <span class="k">while</span> lo &lt; hi:
+        s[lo], s[hi] = s[hi], s[lo]
+        lo += 1; hi -= 1</pre>
+      </div>
+      <div class="lang-pane" id="opt-p7-java">
+<pre><span class="k">public static void</span> reverseString(<span class="t">char</span>[] s) {
+    <span class="t">int</span> l = 0, r = s.length - 1;
+    <span class="k">while</span> (l &lt; r) {
+        <span class="t">char</span> tmp = s[l]; s[l] = s[r]; s[r] = tmp;
+        l++; r--;
+    }
+}</pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── P8: LL Middle ────────────────────────────────────────── -->
+  <div class="card">
+    <div class="problem-header">
+      <div class="problem-num p2">8</div>
+      <div>
+        <div class="problem-title">Middle of Linked List</div>
+        <div class="problem-desc">Return the middle node (second middle for even length).</div>
+      </div>
+    </div>
+    <div class="pill-row"><span class="pill cyan">Slow / Fast</span><span class="pill">LeetCode 876</span></div>
+    <div class="algo-box">
+      <div class="algo-label">Algorithm</div>
+      <ol>
+        <li>Both pointers start at head.</li>
+        <li>Slow moves 1 step; Fast moves 2 steps.</li>
+        <li>When fast.next is null (odd) or fast is null (even), slow is at middle.</li>
+        <li>Why: Fast covers 2× distance → Slow is always at the halfway mark.</li>
+      </ol>
+    </div>
+    <div class="code-block">
+      <div class="lang-tabs">
+        <button class="lang-tab active" onclick="switchLang(this,'opt-p8')">Python</button>
+        <button class="lang-tab" onclick="switchLang(this,'opt-p8-java')">Java</button>
+      </div>
+      <div class="lang-pane active" id="opt-p8">
+<pre><span class="k">def</span> <span class="n">find_middle</span>(head):                    <span class="c"># O(n) time, O(1) space</span>
+    slow = fast = head
+    <span class="k">while</span> fast <span class="k">and</span> fast.next:
+        slow = slow.next
+        fast = fast.next.next
+    <span class="k">return</span> slow</pre>
+      </div>
+      <div class="lang-pane" id="opt-p8-java">
+<pre><span class="k">public static</span> ListNode findMiddle(ListNode head) {
+    ListNode slow = head, fast = head;
+    <span class="k">while</span> (fast != <span class="k">null</span> &amp;&amp; fast.next != <span class="k">null</span>) {
+        slow = slow.next;
+        fast = fast.next.next;
+    }
+    <span class="k">return</span> slow;
+}</pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── P9: LL Cycle ─────────────────────────────────────────── -->
+  <div class="card">
+    <div class="problem-header">
+      <div class="problem-num p3">9</div>
+      <div>
+        <div class="problem-title">Linked List Cycle (Floyd's)</div>
+        <div class="problem-desc">Detect if a linked list has a cycle.</div>
+      </div>
+    </div>
+    <div class="pill-row"><span class="pill cyan">Slow / Fast</span><span class="pill">LeetCode 141</span></div>
+    <div class="callout">
+      <strong>Why they always meet in a cycle</strong> Think of a race on a circular track. The fast runner covers 2 steps per tick; the slow runner covers 1. Once fast laps slow, the gap between them shrinks by 1 each tick. Eventually the gap hits 0 — they collide. If there's no cycle, fast falls off the end (reaches null).
+    </div>
+    <div class="code-block">
+      <div class="lang-tabs">
+        <button class="lang-tab active" onclick="switchLang(this,'opt-p9')">Python</button>
+        <button class="lang-tab" onclick="switchLang(this,'opt-p9-java')">Java</button>
+      </div>
+      <div class="lang-pane active" id="opt-p9">
+<pre><span class="k">def</span> <span class="n">has_cycle</span>(head):                      <span class="c"># O(n) time, O(1) space</span>
+    slow = fast = head
+    <span class="k">while</span> fast <span class="k">and</span> fast.next:
+        slow = slow.next
+        fast = fast.next.next
+        <span class="k">if</span> slow <span class="k">is</span> fast: <span class="k">return True</span>
+    <span class="k">return False</span></pre>
+      </div>
+      <div class="lang-pane" id="opt-p9-java">
+<pre><span class="k">public static boolean</span> hasCycle(ListNode head) {
+    ListNode slow = head, fast = head;
+    <span class="k">while</span> (fast != <span class="k">null</span> &amp;&amp; fast.next != <span class="k">null</span>) {
+        slow = slow.next;
+        fast = fast.next.next;
+        <span class="k">if</span> (slow == fast) <span class="k">return true</span>;
+    }
+    <span class="k">return false</span>;
+}</pre>
+      </div>
+    </div>
+    <table class="cmp-table"><thead><tr><th>Approach</th><th>Time</th><th>Space</th></tr></thead>
+    <tbody><tr><td>Hash Set (visited nodes)</td><td class="good">O(n)</td><td class="bad">O(n)</td></tr>
+    <tr><td>Floyd's Slow/Fast</td><td class="good">O(n)</td><td class="good">O(1)</td></tr></tbody></table>
+  </div>
+
+  <!-- ── P10: Partition 0/1 ─────────────────────────────────── -->
+  <div class="card">
+    <div class="problem-header">
+      <div class="problem-num p4">10</div>
+      <div>
+        <div class="problem-title">Partition 0s and 1s</div>
+        <div class="problem-desc">All 0s to the left, all 1s to the right. In-place.</div>
+      </div>
+    </div>
+    <div class="pill-row"><span class="pill cyan">Read / Write</span></div>
+    <div class="code-block">
+      <div class="lang-tabs">
+        <button class="lang-tab active" onclick="switchLang(this,'opt-p10')">Python</button>
+        <button class="lang-tab" onclick="switchLang(this,'opt-p10-java')">Java</button>
+      </div>
+      <div class="lang-pane active" id="opt-p10">
+<pre><span class="k">def</span> <span class="n">partition_01</span>(nums):                   <span class="c"># O(n) time, O(1) space</span>
+    left = 0
+    <span class="k">for</span> right <span class="k">in</span> range(len(nums)):
+        <span class="k">if</span> nums[right] == 0:
+            nums[left], nums[right] = nums[right], nums[left]
+            left += 1</pre>
+      </div>
+      <div class="lang-pane" id="opt-p10-java">
+<pre><span class="k">public static void</span> partition01(<span class="t">int</span>[] nums) {
+    <span class="t">int</span> left = 0;
+    <span class="k">for</span> (<span class="t">int</span> right = 0; right &lt; nums.length; right++) {
+        <span class="k">if</span> (nums[right] == 0) {
+            <span class="t">int</span> tmp = nums[left]; nums[left] = nums[right]; nums[right] = tmp;
+            left++;
+        }
+    }
+}</pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── P11: Dutch National Flag ─────────────────────────────── -->
+  <div class="card">
+    <div class="problem-header">
+      <div class="problem-num p5">11</div>
+      <div>
+        <div class="problem-title">Sort Colors — Dutch National Flag</div>
+        <div class="problem-desc">Sort array of 0s, 1s, 2s in-place in one pass.</div>
+      </div>
+    </div>
+    <div class="pill-row"><span class="pill red">Dutch National Flag</span><span class="pill">LeetCode 75</span></div>
+    <div class="callout danger">
+      <strong>Critical Bug Trap</strong> When swapping <code>nums[mid]</code> with <code>nums[high]</code>, do NOT increment <code>mid</code>. You just brought an unknown value from the right side — it still needs classification.
+    </div>
+    <div class="code-block">
+      <div class="lang-tabs">
+        <button class="lang-tab active" onclick="switchLang(this,'opt-p11')">Python</button>
+        <button class="lang-tab" onclick="switchLang(this,'opt-p11-java')">Java</button>
+      </div>
+      <div class="lang-pane active" id="opt-p11">
+<pre><span class="k">def</span> <span class="n">sort_colors</span>(nums):                    <span class="c"># O(n) time, O(1) space</span>
+    low = mid = 0
+    high = len(nums) - 1
+    <span class="k">while</span> mid &lt;= high:
+        <span class="k">if</span>   nums[mid] == 0:
+            nums[low], nums[mid] = nums[mid], nums[low]
+            low += 1; mid += 1
+        <span class="k">elif</span> nums[mid] == 1:
+            mid += 1
+        <span class="k">else</span>:                               <span class="c"># 2: swap to high end</span>
+            nums[mid], nums[high] = nums[high], nums[mid]
+            high -= 1                       <span class="c"># DO NOT mid += 1</span></pre>
+      </div>
+      <div class="lang-pane" id="opt-p11-java">
+<pre><span class="k">public static void</span> sortColors(<span class="t">int</span>[] nums) {
+    <span class="t">int</span> low = 0, mid = 0, high = nums.length - 1;
+    <span class="k">while</span> (mid &lt;= high) {
+        <span class="k">if</span>      (nums[mid] == 0) { swap(nums,low,mid);  low++;  mid++; }
+        <span class="k">else if</span> (nums[mid] == 1) {                              mid++; }
+        <span class="k">else</span>                     { swap(nums,mid,high); high--;         }
+    }
+}
+<span class="k">private static void</span> swap(<span class="t">int</span>[] a, <span class="t">int</span> i, <span class="t">int</span> j) {
+    <span class="t">int</span> tmp = a[i]; a[i] = a[j]; a[j] = tmp;
+}</pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── P12: Container With Most Water ───────────────────────── -->
+  <div class="card">
+    <div class="problem-header">
+      <div class="problem-num p6">12</div>
+      <div>
+        <div class="problem-title">Container With Most Water</div>
+        <div class="problem-desc">Find two lines forming a container with maximum water.</div>
+      </div>
+    </div>
+    <div class="pill-row"><span class="pill yellow">Greedy Converging</span><span class="pill">LeetCode 11</span></div>
+    <div class="algo-box">
+      <div class="algo-label">Greedy Argument</div>
+      <ol>
+        <li>Area = min(left height, right height) × width.</li>
+        <li>Moving the taller wall can only decrease or maintain min-height while also shrinking width → guaranteed worse or equal.</li>
+        <li>Moving the shorter wall might find a taller replacement → the only chance to improve.</li>
+        <li>Therefore always advance the pointer on the shorter side.</li>
+      </ol>
+    </div>
+    <div class="code-block">
+      <div class="lang-tabs">
+        <button class="lang-tab active" onclick="switchLang(this,'opt-p12')">Python</button>
+        <button class="lang-tab" onclick="switchLang(this,'opt-p12-java')">Java</button>
+      </div>
+      <div class="lang-pane active" id="opt-p12">
+<pre><span class="k">def</span> <span class="n">max_water</span>(height):                    <span class="c"># O(n) time, O(1) space</span>
+    left, right = 0, len(height) - 1
+    best = 0
+    <span class="k">while</span> left &lt; right:
+        area = min(height[left], height[right]) * (right - left)
+        best = max(best, area)
+        <span class="k">if</span> height[left] &lt; height[right]: left  += 1
+        <span class="k">else</span>:                            right -= 1
+    <span class="k">return</span> best</pre>
+      </div>
+      <div class="lang-pane" id="opt-p12-java">
+<pre><span class="k">public static int</span> maxWater(<span class="t">int</span>[] h) {
+    <span class="t">int</span> left = 0, right = h.length - 1, best = 0;
+    <span class="k">while</span> (left &lt; right) {
+        <span class="t">int</span> area = Math.min(h[left], h[right]) * (right - left);
+        best = Math.max(best, area);
+        <span class="k">if</span> (h[left] &lt; h[right]) left++;
+        <span class="k">else</span>                    right--;
+    }
+    <span class="k">return</span> best;
+}</pre>
+      </div>
+    </div>
+    <table class="cmp-table"><thead><tr><th>Approach</th><th>Time</th><th>Space</th></tr></thead>
+    <tbody><tr><td>Brute Force (all pairs)</td><td class="bad">O(n²)</td><td class="good">O(1)</td></tr>
+    <tr><td>Greedy Two Pointer</td><td class="good">O(n)</td><td class="good">O(1)</td></tr></tbody></table>
+  </div>
+
+</div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SECTION 4 — RECOGNITION
+════════════════════════════════════════════════════════════════════ -->
+<section class="section" id="recognition">
+<div class="page-wrap">
+
+  <h2>Pattern Recognition Guide</h2>
+
+  <div class="callout tip">
+    <strong>The Treasure Hunt Rule</strong> "If I say find treasure in a large area, you don't even know what to look for. But if I tell you the treasure is green, you immediately know." Every keyword below is your "green colour" — it tells you which pointer shape to reach for.
+  </div>
+
+  <h3>Keyword → Pattern Map</h3>
+  <table class="pattern-map">
+    <thead><tr><th>Keyword / Phrase in Problem</th><th>Most Likely Pattern</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td>"sorted array / string"</td><td>Converging or Two Sequences</td><td>Ordering gives you a free min/max split at the endpoints</td></tr>
+      <tr><td>"target sum", "equals k"</td><td>Converging (two-pointer)</td><td>You have bounded limits; greedy pointer choice narrows the gap</td></tr>
+      <tr><td>"compare and combine two lists"</td><td>Two Sequences</td><td>One pointer per list; advance the smaller</td></tr>
+      <tr><td>"nested loop / O(n²) is too slow"</td><td>Any two-pointer shape</td><td>A nested loop fixes one element and scans the rest — two pointers often scan both simultaneously</td></tr>
+      <tr><td>"move / shrink a window"</td><td>Converging (shrinking window)</td><td>Two fixed limits; you shrink from one end</td></tr>
+      <tr><td>"palindrome"</td><td>Converging</td><td>Compare outermost chars, move both inward</td></tr>
+      <tr><td>"reverse in-place"</td><td>Converging</td><td>Swap endpoints, converge to middle</td></tr>
+      <tr><td>"find middle" / "kth from end"</td><td>Slow / Fast</td><td>Fast covers 2× distance of slow</td></tr>
+      <tr><td>"detect cycle", "loop in list"</td><td>Slow / Fast (Floyd's)</td><td>In a cycle, fast laps slow and they collide</td></tr>
+      <tr><td>"partition", "move zeros", "separate"</td><td>Read / Write</td><td>Write pointer marks the boundary of the valid region</td></tr>
+      <tr><td>"sort 0s 1s 2s", "3-way partition"</td><td>Dutch National Flag</td><td>Three pointers define three regions</td></tr>
+      <tr><td>"remove duplicates in-place"</td><td>Read / Write</td><td>Advance write only when a new unique value is found</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Decision Flowchart</h3>
+  <div class="card">
+    <pre style="font-size:.8rem;line-height:1.8">Is input SORTED (or can be sorted)?
+├── Yes + one array   → Converging (if looking for a pair)
+│                     → Read/Write (if removing / partitioning)
+├── Yes + two arrays  → Two Sequences
+└── No → need cycle detection?  → Slow / Fast
+         need 3-way partition?  → Dutch National Flag
+         need in-place filter?  → Read / Write</pre>
+  </div>
+
+  <h3>Time Complexity At a Glance</h3>
+  <table class="cmp-table">
+    <thead><tr><th>Pattern</th><th>Time</th><th>Space</th></tr></thead>
+    <tbody>
+      <tr><td>Converging (one sorted array)</td><td class="good">O(n)</td><td class="good">O(1)</td></tr>
+      <tr><td>Two Sequences (merge/union/intersection)</td><td class="good">O(m+n)</td><td class="good">O(1)*</td></tr>
+      <tr><td>Sort + Anchor + Converge (3Sum)</td><td class="ok">O(n²)</td><td class="ok">O(n) sort</td></tr>
+      <tr><td>k-Sum (k anchors + converge)</td><td class="ok">O(nᵏ⁻¹)</td><td class="ok">O(n) sort</td></tr>
+      <tr><td>Read / Write (partition)</td><td class="good">O(n)</td><td class="good">O(1)</td></tr>
+      <tr><td>Dutch National Flag</td><td class="good">O(n)</td><td class="good">O(1)</td></tr>
+      <tr><td>Slow / Fast (linked list)</td><td class="good">O(n)</td><td class="good">O(1)</td></tr>
+    </tbody>
+  </table>
+
+</div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SECTION 5 — TEMPLATES
+════════════════════════════════════════════════════════════════════ -->
+<section class="section" id="templates">
+<div class="page-wrap">
+  <h2>Copy-Paste Templates</h2>
+
+  <h3>1. Converging (Sorted Array)</h3>
+  <pre>left, right = 0, len(arr) - 1
+while left &lt; right:
+    if condition_met(arr, left, right):
+        # record answer
+        # skip duplicates if needed
+        while left &lt; right and arr[left]  == arr[left+1]:  left  += 1
+        while left &lt; right and arr[right] == arr[right-1]: right -= 1
+        left += 1; right -= 1
+    elif need_larger:
+        left  += 1
+    else:
+        right -= 1</pre>
+
+  <h3>2. k-Sum (Sort + Anchors + Converge)</h3>
+  <pre>nums.sort()
+def k_sum(start, k, target, result, path):
+    if k == 2:                                     # base case: two-pointer
+        l, r = start, len(nums) - 1
+        while l &lt; r:
+            s = nums[l] + nums[r]
+            if s == target:
+                result.append(path + [nums[l], nums[r]])
+                while l &lt; r and nums[l] == nums[l+1]: l += 1
+                while l &lt; r and nums[r] == nums[r-1]: r -= 1
+                l += 1; r -= 1
+            elif s &lt; target: l += 1
+            else:            r -= 1
+        return
+    for i in range(start, len(nums) - k + 1):
+        if i > start and nums[i] == nums[i-1]: continue   # skip dup anchor
+        k_sum(i + 1, k - 1, target - nums[i], result, path + [nums[i]])</pre>
+
+  <h3>3. Two Sequences</h3>
+  <pre>i = j = 0
+while i &lt; len(a) and j &lt; len(b):
+    if a[i] &lt; b[j]:  process_a(a[i]); i += 1
+    elif b[j] &lt; a[i]: process_b(b[j]); j += 1
+    else:              process_both(a[i]); i += 1; j += 1
+while i &lt; len(a): drain_a(a[i]); i += 1
+while j &lt; len(b): drain_b(b[j]); j += 1</pre>
+
+  <h3>4. Read / Write (In-Place Filter)</h3>
+  <pre>write = 0
+for read in range(len(arr)):
+    if should_keep(arr[read]):
+        arr[write] = arr[read]
+        write += 1
+return write   # new logical length</pre>
+
+  <h3>5. Dutch National Flag (3-Way Partition)</h3>
+  <pre>low = mid = 0
+high = len(nums) - 1
+while mid &lt;= high:
+    if   nums[mid] == 0: nums[low], nums[mid] = nums[mid], nums[low]; low += 1; mid += 1
+    elif nums[mid] == 1: mid += 1
+    else:                nums[mid], nums[high] = nums[high], nums[mid]; high -= 1  # NO mid++</pre>
+
+  <h3>6. Slow / Fast (Linked List)</h3>
+  <pre>slow = fast = head
+while fast and fast.next:
+    slow = slow.next
+    fast = fast.next.next
+    if slow is fast:        # cycle detection
+        return True
+# No cycle → slow is at middle node</pre>
+
+</div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SECTION 6 — MISTAKES
+════════════════════════════════════════════════════════════════════ -->
+<section class="section" id="mistakes">
+<div class="page-wrap">
+  <h2>Common Mistakes &amp; Edge Cases</h2>
+
+  <div class="card-grid">
+    <div class="card-sm">
+      <div class="pill-row"><span class="pill red">Bug</span></div>
+      <h4>Advancing mid after DNF high-swap</h4>
+      <p style="font-size:.87rem;color:var(--fg2)">In Dutch National Flag, when swapping <code>nums[mid]</code> with <code>nums[high]</code>, the value at <code>mid</code> is now unknown — it just arrived from the right. Don't increment <code>mid</code> until it's been classified.</p>
+    </div>
+    <div class="card-sm">
+      <div class="pill-row"><span class="pill red">Bug</span></div>
+      <h4>Off-by-one: <code>left &lt; right</code> vs <code>left &lt;= right</code></h4>
+      <p style="font-size:.87rem;color:var(--fg2)">Converging loops use <code>&lt;</code> (stop when they cross). Read/write loops use <code>for read in range(n)</code> (visit every element). Confusing these causes missed elements or infinite loops.</p>
+    </div>
+    <div class="card-sm">
+      <div class="pill-row"><span class="pill red">Bug</span></div>
+      <h4>Forgetting to skip duplicates in k-Sum</h4>
+      <p style="font-size:.87rem;color:var(--fg2)">In 3Sum, skip duplicates at both the anchor level (<code>i</code>) and both pointer levels after finding a valid triplet. Missing any one of these yields duplicate results.</p>
+    </div>
+    <div class="card-sm">
+      <div class="pill-row"><span class="pill red">Bug</span></div>
+      <h4>Sorting mutates the caller's array</h4>
+      <p style="font-size:.87rem;color:var(--fg2)">In Python, <code>nums.sort()</code> modifies in-place and returns <code>None</code>. Never write <code>nums = nums.sort()</code> — <code>nums</code> becomes <code>None</code>. Use <code>nums.sort()</code> (mutate) or <code>sorted_nums = sorted(nums)</code> (copy).</p>
+    </div>
+    <div class="card-sm">
+      <div class="pill-row"><span class="pill yellow">Trap</span></div>
+      <h4>Two pointers on unsorted data</h4>
+      <p style="font-size:.87rem;color:var(--fg2)">Converging two pointers require a monotone property (usually sortedness). Without it you can't guarantee that advancing the left pointer always increases the sum — the elimination argument breaks.</p>
+    </div>
+    <div class="card-sm">
+      <div class="pill-row"><span class="pill yellow">Trap</span></div>
+      <h4>Cycle detection: <code>slow is fast</code> not <code>slow == fast</code></h4>
+      <p style="font-size:.87rem;color:var(--fg2)">In Python, <code>==</code> checks value equality; <code>is</code> checks object identity. For cycle detection you want the exact same node, so use <code>is</code>. In Java, use <code>==</code> for object reference comparison.</p>
+    </div>
+  </div>
+
+  <h3>Edge Cases to Always Test</h3>
+  <div class="card">
+    <ul>
+      <li><strong>Empty input:</strong> <code>[]</code>, <code>""</code>, <code>None</code> head.</li>
+      <li><strong>Single element:</strong> two-pointer loop never enters — return that element or false immediately.</li>
+      <li><strong>All same elements:</strong> duplicate-skip logic must handle <code>[0,0,0,0]</code> without infinite loop.</li>
+      <li><strong>Already sorted / reverse sorted:</strong> converging still O(n); no worst-case regression.</li>
+      <li><strong>Even vs odd length linked list:</strong> middle node is (n/2)th or ((n+1)/2)th depending on your loop guard.</li>
+      <li><strong>Two-element list (cycle):</strong> head → node → head; fast.next.next is head; must detect in first iteration.</li>
+      <li><strong>Container water with all equal heights:</strong> every pair gives same area; greedy still terminates correctly.</li>
+      <li><strong>Palindrome with all non-alphanumeric chars:</strong> both pointers meet without ever comparing — return <code>True</code>.</li>
+    </ul>
+  </div>
+
+</div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════
+     SECTION 7 — CHECKLIST
+════════════════════════════════════════════════════════════════════ -->
+<section class="section" id="checklist">
+<div class="page-wrap">
+
+  <h2>Mastery Checklist</h2>
+  <p>Tick each item as you master it. Progress is saved in your browser.</p>
+
+  <div class="progress-wrap">
+    <div class="progress-label"><span>Progress</span><span id="prog-text">0 / 20</span></div>
+    <div class="progress-bar-outer"><div class="progress-bar-inner" id="prog-bar" style="width:0%"></div></div>
+  </div>
+
+  <h3>Concepts</h3>
+  <ul class="checklist" id="cl">
+    <li><div class="check-icon" data-id="c1" onclick="toggle(this)"></div><span>I can explain why two pointers achieves O(n) instead of O(n²) using the elimination argument</span></li>
+    <li><div class="check-icon" data-id="c2" onclick="toggle(this)"></div><span>I know the 6 pointer shapes and can name a problem that uses each</span></li>
+    <li><div class="check-icon" data-id="c3" onclick="toggle(this)"></div><span>I can explain why nested inner while loops inside two pointers are still O(n) total</span></li>
+    <li><div class="check-icon" data-id="c4" onclick="toggle(this)"></div><span>I understand why Floyd's slow/fast always meet in a cycle (closing-gap argument)</span></li>
+    <li><div class="check-icon" data-id="c5" onclick="toggle(this)"></div><span>I can explain the greedy argument for Container With Most Water</span></li>
+  </ul>
+
+  <h3>Pattern Recognition</h3>
+  <ul class="checklist">
+    <li><div class="check-icon" data-id="r1" onclick="toggle(this)"></div><span>Seeing "sorted + target sum" → I immediately think Converging</span></li>
+    <li><div class="check-icon" data-id="r2" onclick="toggle(this)"></div><span>Seeing "two sorted lists to merge" → I immediately think Two Sequences</span></li>
+    <li><div class="check-icon" data-id="r3" onclick="toggle(this)"></div><span>Seeing "find middle / kth node" → I immediately think Slow/Fast</span></li>
+    <li><div class="check-icon" data-id="r4" onclick="toggle(this)"></div><span>Seeing "in-place partition/filter" → I immediately think Read/Write</span></li>
+    <li><div class="check-icon" data-id="r5" onclick="toggle(this)"></div><span>Seeing "0s 1s 2s / 3-way sort" → I immediately think Dutch National Flag</span></li>
+  </ul>
+
+  <h3>Problem Coding</h3>
+  <ul class="checklist">
+    <li><div class="check-icon" data-id="p1" onclick="toggle(this)"></div><span>Two Sum II — coded from memory without bugs</span></li>
+    <li><div class="check-icon" data-id="p2" onclick="toggle(this)"></div><span>3Sum — coded with correct duplicate skipping at anchor AND pointer level</span></li>
+    <li><div class="check-icon" data-id="p3" onclick="toggle(this)"></div><span>Merge Two Sorted Arrays — coded Two Sequences pattern</span></li>
+    <li><div class="check-icon" data-id="p4" onclick="toggle(this)"></div><span>Valid Palindrome — coded with isalnum skip and in-place O(1) space</span></li>
+    <li><div class="check-icon" data-id="p5" onclick="toggle(this)"></div><span>Linked List Middle — slow/fast, one pass</span></li>
+    <li><div class="check-icon" data-id="p6" onclick="toggle(this)"></div><span>Linked List Cycle — Floyd's, O(1) space</span></li>
+    <li><div class="check-icon" data-id="p7" onclick="toggle(this)"></div><span>Sort Colors — DNF with correct mid-not-incremented bug avoided</span></li>
+    <li><div class="check-icon" data-id="p8" onclick="toggle(this)"></div><span>Container With Most Water — greedy, can defend the argument verbally</span></li>
+  </ul>
+
+  <h3>Advanced</h3>
+  <ul class="checklist">
+    <li><div class="check-icon" data-id="a1" onclick="toggle(this)"></div><span>Generalised k-Sum using recursion + two-pointer base case</span></li>
+    <li><div class="check-icon" data-id="a2" onclick="toggle(this)"></div><span>Can explain difference between Sliding Window and Two Pointers and when each is better</span></li>
+  </ul>
+
+  <h3>Further Practice (LeetCode)</h3>
+  <div class="card-grid">
+    <div class="card-sm">
+      <h4>🟢 Easy</h4>
+      <ul style="font-size:.85rem;">
+        <li>125 — Valid Palindrome</li>
+        <li>344 — Reverse String</li>
+        <li>876 — Middle of Linked List</li>
+        <li>141 — Linked List Cycle</li>
+        <li>283 — Move Zeroes</li>
+      </ul>
+    </div>
+    <div class="card-sm">
+      <h4>🟡 Medium</h4>
+      <ul style="font-size:.85rem;">
+        <li>167 — Two Sum II</li>
+        <li>15 — 3Sum</li>
+        <li>11 — Container With Most Water</li>
+        <li>75 — Sort Colors</li>
+        <li>26 — Remove Duplicates from Sorted Array</li>
+        <li>88 — Merge Sorted Array</li>
+      </ul>
+    </div>
+    <div class="card-sm">
+      <h4>🔴 Hard</h4>
+      <ul style="font-size:.85rem;">
+        <li>42 — Trapping Rain Water</li>
+        <li>18 — 4Sum</li>
+        <li>142 — Linked List Cycle II</li>
+        <li>287 — Find the Duplicate Number</li>
+      </ul>
+    </div>
+  </div>
+
+</div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     §8 PROBLEM-SOLVING METHOD  +  §12 MENTAL MODEL
+     ═══════════════════════════════════════════════════════════════ -->
+<section class="section" id="method">
+
+<h2 style="margin-bottom:1.5rem">§8 — Problem-Solving Method</h2>
+<p style="color:var(--fg2);margin-bottom:1.5rem">A repeatable 5-step interview protocol. Run these steps every time you see a new problem—never jump straight to code.</p>
+
+<div style="display:grid;gap:1rem">
+
+  <!-- Step 1 -->
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:1.25rem;display:grid;grid-template-columns:2.5rem 1fr;gap:1rem;align-items:start">
+    <div style="background:var(--accent);color:#fff;border-radius:50%;width:2.5rem;height:2.5rem;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:1.1rem;flex-shrink:0">1</div>
+    <div>
+      <h3 style="margin:0 0 .4rem">Read &amp; Classify</h3>
+      <p style="color:var(--fg2);margin:0 0 .75rem">Parse the problem statement for pointer-pattern signals before solving anything.</p>
+      <div style="background:var(--bg3);border-radius:6px;padding:.75rem;font-size:.85rem">
+        <strong>Say aloud:</strong> <em>"The input is <span style="color:var(--cyan)">[sorted / unsorted / two sequences / linked list]</span>. The task is <span style="color:var(--cyan)">[find pair / partition / merge / detect cycle]</span>. I see the keyword <span style="color:var(--cyan)">[sorted / target / palindrome / cycle]</span> which points to <span style="color:var(--cyan)">[pattern]</span>."</em>
+      </div>
+      <div style="margin-top:.75rem;display:flex;flex-wrap:wrap;gap:.4rem">
+        <span class="pill" style="background:var(--bg3);color:var(--fg2)">sorted array → converging</span>
+        <span class="pill" style="background:var(--bg3);color:var(--fg2)">two sequences → two-sequence</span>
+        <span class="pill" style="background:var(--bg3);color:var(--fg2)">in-place / O(1) space → read/write or 3-way</span>
+        <span class="pill" style="background:var(--bg3);color:var(--fg2)">linked list → slow/fast</span>
+        <span class="pill" style="background:var(--bg3);color:var(--fg2)">k-sum → sort+anchor+converge</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2 -->
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:1.25rem;display:grid;grid-template-columns:2.5rem 1fr;gap:1rem;align-items:start">
+    <div style="background:var(--orange);color:#fff;border-radius:50%;width:2.5rem;height:2.5rem;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:1.1rem;flex-shrink:0">2</div>
+    <div>
+      <h3 style="margin:0 0 .4rem">State the Brute Force</h3>
+      <p style="color:var(--fg2);margin:0 0 .75rem">Always say the naive O(n²) solution first—it shows you understand the problem and gives the interviewer a baseline.</p>
+      <div style="background:var(--bg3);border-radius:6px;padding:.75rem;font-size:.85rem">
+        <strong>Say aloud:</strong> <em>"The brute-force is to try every pair with nested loops—O(n²) time. We can do better because <span style="color:var(--yellow)">[the array is sorted / the values have a monotone property / we can use a read pointer and a write pointer]</span>."</em>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 3 -->
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:1.25rem;display:grid;grid-template-columns:2.5rem 1fr;gap:1rem;align-items:start">
+    <div style="background:var(--green);color:#fff;border-radius:50%;width:2.5rem;height:2.5rem;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:1.1rem;flex-shrink:0">3</div>
+    <div>
+      <h3 style="margin:0 0 .4rem">Find the Insight — Elimination Argument</h3>
+      <p style="color:var(--fg2);margin:0 0 .75rem">Why can you skip the inner loop? Articulate the <em>provably safe elimination</em> that collapses O(n²) to O(n).</p>
+      <div style="background:var(--bg3);border-radius:6px;padding:.75rem;font-size:.85rem">
+        <strong>Converging pattern:</strong> <em>"If <code>nums[left] + nums[right] &lt; target</code>, then <code>nums[left]</code> with any element to the left of <code>right</code> also sums too small, so we can discard the entire left column and advance <code>left</code>."</em><br><br>
+        <strong>Read/Write pattern:</strong> <em>"The write pointer marks the boundary of the clean region; nothing behind it needs re-examination."</em><br><br>
+        <strong>Slow/Fast pattern:</strong> <em>"If a cycle exists, the fast pointer laps the slow one—they must meet. If no cycle, fast hits null."</em>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 4 -->
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:1.25rem;display:grid;grid-template-columns:2.5rem 1fr;gap:1rem;align-items:start">
+    <div style="background:var(--cyan);color:#0f1117;border-radius:50%;width:2.5rem;height:2.5rem;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:1.1rem;flex-shrink:0">4</div>
+    <div>
+      <h3 style="margin:0 0 .4rem">Choose the Pointer Shape</h3>
+      <p style="color:var(--fg2);margin:0 0 .75rem">Pick the movement pattern that matches the insight.</p>
+      <table style="width:100%;font-size:.82rem;border-collapse:collapse">
+        <thead><tr style="border-bottom:1px solid var(--border)">
+          <th style="text-align:left;padding:.4rem .6rem;color:var(--fg2)">Insight</th>
+          <th style="text-align:left;padding:.4rem .6rem;color:var(--fg2)">Shape</th>
+          <th style="text-align:left;padding:.4rem .6rem;color:var(--fg2)">Template</th>
+        </tr></thead>
+        <tbody>
+          <tr style="border-bottom:1px solid var(--border)"><td style="padding:.4rem .6rem">Sorted, need pair</td><td style="padding:.4rem .6rem;color:var(--accent2)">Converging</td><td style="padding:.4rem .6rem;font-family:'JetBrains Mono',monospace">left=0, right=n-1</td></tr>
+          <tr style="border-bottom:1px solid var(--border)"><td style="padding:.4rem .6rem">In-place filter/partition</td><td style="padding:.4rem .6rem;color:var(--accent2)">Read/Write</td><td style="padding:.4rem .6rem;font-family:'JetBrains Mono',monospace">write=0, read in for-loop</td></tr>
+          <tr style="border-bottom:1px solid var(--border)"><td style="padding:.4rem .6rem">Two sorted arrays</td><td style="padding:.4rem .6rem;color:var(--accent2)">Two-Sequence</td><td style="padding:.4rem .6rem;font-family:'JetBrains Mono',monospace">i=0, j=0</td></tr>
+          <tr style="border-bottom:1px solid var(--border)"><td style="padding:.4rem .6rem">k-sum on sorted arr</td><td style="padding:.4rem .6rem;color:var(--accent2)">Sort+Anchor+Converge</td><td style="padding:.4rem .6rem;font-family:'JetBrains Mono',monospace">sort; outer loop; inner converge</td></tr>
+          <tr style="border-bottom:1px solid var(--border)"><td style="padding:.4rem .6rem">0/1/2 partition</td><td style="padding:.4rem .6rem;color:var(--accent2)">Dutch National Flag</td><td style="padding:.4rem .6rem;font-family:'JetBrains Mono',monospace">low=0, mid=0, high=n-1</td></tr>
+          <tr><td style="padding:.4rem .6rem">Linked list middle/cycle</td><td style="padding:.4rem .6rem;color:var(--accent2)">Slow/Fast</td><td style="padding:.4rem .6rem;font-family:'JetBrains Mono',monospace">slow=head, fast=head</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Step 5 -->
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:1.25rem;display:grid;grid-template-columns:2.5rem 1fr;gap:1rem;align-items:start">
+    <div style="background:var(--yellow);color:#0f1117;border-radius:50%;width:2.5rem;height:2.5rem;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:1.1rem;flex-shrink:0">5</div>
+    <div>
+      <h3 style="margin:0 0 .4rem">Code + Edge Cases</h3>
+      <p style="color:var(--fg2);margin:0 0 .75rem">Write the optimal solution, then verify the three universal two-pointer edge cases before declaring done.</p>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.6rem;margin-top:.5rem">
+        <div style="background:var(--bg3);border-radius:6px;padding:.65rem;font-size:.82rem">
+          <strong style="color:var(--red)">Empty / null input</strong><br>
+          <span style="color:var(--fg2)">0-length array, null head</span>
+        </div>
+        <div style="background:var(--bg3);border-radius:6px;padding:.65rem;font-size:.82rem">
+          <strong style="color:var(--red)">Single element</strong><br>
+          <span style="color:var(--fg2)">n=1: left==right from the start</span>
+        </div>
+        <div style="background:var(--bg3);border-radius:6px;padding:.65rem;font-size:.82rem">
+          <strong style="color:var(--red)">All identical values</strong><br>
+          <span style="color:var(--fg2)">duplicate-skip logic critical</span>
+        </div>
+        <div style="background:var(--bg3);border-radius:6px;padding:.65rem;font-size:.82rem">
+          <strong style="color:var(--red)">Odd vs Even length</strong><br>
+          <span style="color:var(--fg2)">palindromes, middles</span>
+        </div>
+        <div style="background:var(--bg3);border-radius:6px;padding:.65rem;font-size:.82rem">
+          <strong style="color:var(--red)">No valid answer</strong><br>
+          <span style="color:var(--fg2)">return [], {}, -1 or false</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- end steps grid -->
+
+<!-- ─── §12 Mental Model ─────────────────────────────────────────── -->
+<h2 style="margin:2.5rem 0 1rem">§12 — Mental Model: The Shrinking Search Space</h2>
+
+<div style="background:var(--bg2);border:1px solid var(--accent);border-radius:12px;padding:1.5rem;margin-bottom:1.5rem">
+  <p style="font-size:1.05rem;margin:0 0 1rem"><strong>Core idea:</strong> Two pointers work whenever moving a pointer can <em>provably eliminate</em> a set of candidates that cannot contain the answer. Every move shrinks the space; the loop terminates; you never revisit eliminated candidates.</p>
+  <p style="color:var(--fg2);margin:0">This is why the nested-loop analysis (<em>"looks like O(n²)"</em>) is wrong: each pointer only moves forward, so the <em>total</em> number of pointer steps across the entire run is O(n), not O(n) per outer iteration.</p>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem;margin-bottom:1.5rem">
+
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:1.25rem">
+    <h4 style="margin:0 0 .75rem;color:var(--accent2)">Converging — shrinking a window</h4>
+    <pre style="background:var(--bg3);border-radius:6px;padding:.75rem;font-size:.78rem;overflow-x:auto;margin:0">[ eliminated | L ·candidate space· R | eliminated ]
+  ← left advances                right recedes →</pre>
+    <p style="color:var(--fg2);font-size:.85rem;margin:.75rem 0 0">The candidate space is all pairs <code>(i,j)</code> with <code>L≤i&lt;j≤R</code>. Every move eliminates one row or one column of that grid.</p>
+  </div>
+
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:1.25rem">
+    <h4 style="margin:0 0 .75rem;color:var(--accent2)">Read / Write — two roles on one array</h4>
+    <pre style="background:var(--bg3);border-radius:6px;padding:.75rem;font-size:.78rem;overflow-x:auto;margin:0">[ clean | W ··· R | unprocessed ]
+  write ptr          read ptr →</pre>
+    <p style="color:var(--fg2);font-size:.85rem;margin:.75rem 0 0">The write pointer is a boundary: <em>everything behind it is already correct</em>. The read pointer scans ahead, deciding whether each element crosses into the clean region.</p>
+  </div>
+
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:1.25rem">
+    <h4 style="margin:0 0 .75rem;color:var(--accent2)">Dutch National Flag — three regions</h4>
+    <pre style="background:var(--bg3);border-radius:6px;padding:.75rem;font-size:.78rem;overflow-x:auto;margin:0">[ 0s | 1s | unknown | 2s ]
+  0   low  mid      high  n-1</pre>
+    <p style="color:var(--fg2);font-size:.85rem;margin:.75rem 0 0">Three invariants maintained simultaneously. The unknown region shrinks until <code>mid&gt;high</code>.</p>
+  </div>
+
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:1.25rem">
+    <h4 style="margin:0 0 .75rem;color:var(--accent2)">Slow / Fast — distance encodes structure</h4>
+    <pre style="background:var(--bg3);border-radius:6px;padding:.75rem;font-size:.78rem;overflow-x:auto;margin:0">slow: 1 step/tick  →  finds middle
+fast: 2 steps/tick →  detects cycle</pre>
+    <p style="color:var(--fg2);font-size:.85rem;margin:.75rem 0 0">The speed ratio encodes structural knowledge: when fast is at the end, slow is exactly at the midpoint.</p>
+  </div>
+
+</div>
+
+<!-- Amortized proof callout -->
+<div style="background:var(--bg2);border-left:4px solid var(--green);padding:1rem 1.25rem;border-radius:0 8px 8px 0;margin-bottom:1.5rem">
+  <strong style="color:var(--green)">Amortized O(n) proof (one sentence)</strong><br>
+  <span style="color:var(--fg2);font-size:.9rem">Each pointer starts at one end and moves monotonically toward the other; with two pointers and an array of length n, the total pointer steps across the entire algorithm ≤ 2n, regardless of how many while loops are nested.</span>
+</div>
+
+<!-- The treasure-hunt analogy -->
+<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:1.25rem">
+  <h4 style="margin:0 0 .75rem">🗝 Treasure-Hunt Analogy (from transcript)</h4>
+  <p style="color:var(--fg2);margin:0">Knowing "the treasure is green" tells you where to <em>start looking</em> — not where the treasure is, but how to rule out everything that isn't green. Pattern recognition does the same thing for coding problems: the keyword <em>sorted</em> is the color; the converging pointer is where you start. The search-space argument is how you prove you won't miss the treasure.</p>
+</div>
+
+</section>
+<!-- end method section -->
+
+<script>
+// ── Tab switching ─────────────────────────────────────────────────
+function show(id, btn) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(b => b.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  btn.classList.add('active');
+}
+
+// ── Language tabs per code block ──────────────────────────────────
+function switchLang(btn, paneId) {
+  const block = btn.closest('.code-block');
+  block.querySelectorAll('.lang-tab').forEach(b => b.classList.remove('active'));
+  block.querySelectorAll('.lang-pane').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById(paneId).classList.add('active');
+}
+
+// ── Theme toggle ──────────────────────────────────────────────────
+function toggleTheme() {
+  const root = document.documentElement;
+  const cur = root.getAttribute('data-theme');
+  root.setAttribute('data-theme', cur === 'light' ? 'dark' : 'light');
+  try { localStorage.setItem('tp-theme', root.getAttribute('data-theme')); } catch(e) {}
+}
+try {
+  const saved = localStorage.getItem('tp-theme');
+  if (saved) document.documentElement.setAttribute('data-theme', saved);
+} catch(e) {}
+
+// ── Checklist ─────────────────────────────────────────────────────
+const TOTAL = 20;
+function toggle(el) {
+  el.classList.toggle('done');
+  const id = el.dataset.id;
+  try {
+    const state = JSON.parse(localStorage.getItem('tp-checks') || '{}');
+    state[id] = el.classList.contains('done');
+    localStorage.setItem('tp-checks', JSON.stringify(state));
+  } catch(e) {}
+  updateProgress();
+}
+function updateProgress() {
+  const done = document.querySelectorAll('.check-icon.done').length;
+  document.getElementById('prog-text').textContent = done + ' / ' + TOTAL;
+  document.getElementById('prog-bar').style.width = (done / TOTAL * 100) + '%';
+}
+try {
+  const state = JSON.parse(localStorage.getItem('tp-checks') || '{}');
+  Object.entries(state).forEach(([id, checked]) => {
+    if (checked) {
+      const el = document.querySelector('[data-id="' + id + '"]');
+      if (el) el.classList.add('done');
+    }
+  });
+} catch(e) {}
+updateProgress();
+</script>
+</body>
+</html>

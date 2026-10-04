@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/><meta content="width=device-width,initial-scale=1" name="viewport"/>
+<title>Instruction Tuning &amp; SFT — AI Engineering &amp; Research Deep Dive</title>
+<link rel="stylesheet" href="../assets/style.css"/>
+</head>
+<body id="top">
+<div class="layout single">
+<main>
+<section class="chapter" data-category="Training &amp; Adaptation" id="t10">
+<div class="chapter-kicker">Training &amp; Adaptation · Chapter 10 / 101</div>
+<h1>Instruction Tuning &amp; SFT</h1>
+<p class="lede">A production-and-research treatment for engineers who already know ML, neural networks, and Transformer fundamentals. Each chapter splits into two pages: <strong>mechanism</strong> first, then systems, failure modes, and research reasoning.</p><div class="plain-bridge"><div class="plain-label">In plain English</div><p>Instruction tuning teaches a pretrained model how to follow tasks and respond in the format people actually want.</p></div>
+<div class="chapter-page">
+<div class="page-label">PAGE 1 · MECHANISM, MENTAL MODEL, THEORY</div>
+
+<h2>1. Big Idea — What is Instruction Tuning &amp; SFT?</h2>
+<div class="status"><strong>One-line idea:</strong> Pre-training teaches a model <strong>what it can learn</strong>; Instruction Tuning / SFT teaches it <strong>how to respond to what we ask it to do</strong>.</div>
+<h3>Big Idea</h3>
+<p>Imagine you have a pretrained LLM.</p>
+<p>It has read enormous amounts of text and learned patterns such as:</p>
+<ul>
+<li>language structure</li>
+<li>facts and associations</li>
+<li>reasoning patterns</li>
+<li>coding patterns</li>
+<li>common document structures</li>
+</ul>
+<p>But there is a problem:</p>
+<div class="case-note"><strong>Knowing something is not the same as knowing how to respond to a user's instruction.</strong></div>
+<p>For example, a pretrained model may know what Python is, but that doesn't guarantee it will answer:</p>
+<div class="case-note">"Explain Python to a beginner in 5 bullet points."</div>
+<p>in the format you actually want.</p>
+<p><strong>Instruction tuning / SFT fixes this by showing the model examples of:</strong></p>
+<pre class="diagram">Instruction / Prompt
+        ↓
+Desired Response</pre>
+<p>The model is then trained to reproduce the desired response style and behavior.</p>
+<h3>What Exactly Is SFT?</h3>
+<p><strong>SFT = Supervised Fine-Tuning.</strong></p>
+<p>It is supervised adaptation of a pretrained model using examples like:</p>
+<pre class="diagram">Input:
+"Explain photosynthesis to a 10-year-old."
+
+Target:
+"Photosynthesis is the process by which plants
+use sunlight to make food..."</pre>
+<p>The model learns:</p>
+<pre class="diagram">Given this kind of instruction
+            ↓
+Produce this kind of response</pre>
+<p>Formally:</p>
+<div class="case-note"><strong>SFT trains a pretrained model to map task instructions and conversational context to preferred target responses.</strong></div>
+
+<h2>2. Pre-training vs SFT</h2>
+<p>This distinction is extremely important.</p>
+<pre class="diagram">                 PRE-TRAINING
+                      │
+                      ▼
+          Learn language/statistical patterns
+                      │
+                      ▼
+                Base LLM
+                      │
+                      │
+                      ▼
+              INSTRUCTION SFT
+                      │
+                      ▼
+        Learn desired response behavior
+                      │
+                      ▼
+          Instruction-following LLM</pre>
+<h3>Example</h3>
+<h3>Pre-training</h3>
+<p>The model sees:</p>
+<pre class="diagram">The capital of France is</pre>
+<p>and learns to predict:</p>
+<pre class="diagram">Paris</pre>
+<h3>SFT</h3>
+<p>The model sees:</p>
+<pre class="diagram">User:
+"What is the capital of France?
+Answer in one sentence."</pre>
+<p>and learns:</p>
+<pre class="diagram">"The capital of France is Paris."</pre>
+<p>So:</p>
+<div class="case-note"><strong>Pre-training teaches the model language/statistical structure.</strong></div>
+<div class="case-note"><strong>SFT teaches the model how humans want that knowledge expressed in response to instructions.</strong></div>
+<p>The source explicitly frames pretraining as learning distributions/capabilities while SFT addresses desired task behavior and response format.</p>
+
+<h2>3. The Problem and a Layman Analogy</h2>
+<h3>What Problem Does SFT Solve?</h3>
+<h3>Problem</h3>
+<p>A pretrained model has capabilities, but those capabilities don't uniquely determine:</p>
+<ul>
+<li>what task to perform</li>
+<li>how to interpret an instruction</li>
+<li>how much detail to provide</li>
+<li>what format to use</li>
+<li>how to behave conversationally</li>
+</ul>
+<p>The source describes this as:</p>
+<pre class="diagram">Pretraining
+    ↓
+Learns distributions + capabilities
+    ↓
+BUT
+    ↓
+Doesn't uniquely determine desired behavior
+    ↓
+SFT
+    ↓
+Prompt → Preferred response</pre>
+<h3>Layman Analogy</h3>
+<p>Think about teaching a talented employee.</p>
+<h3>Before training</h3>
+<p>The employee knows:</p>
+<ul>
+<li>programming</li>
+<li>mathematics</li>
+<li>English</li>
+<li>documentation</li>
+<li>technical concepts</li>
+</ul>
+<p>But you haven't told them how your company expects them to work.</p>
+<p>You give them examples:</p>
+<pre class="diagram">When customer asks X → respond like this
+
+When user asks Y → format it like this
+
+When task requires Z → perform it like this</pre>
+<p>After seeing many examples, they start following the organization's expected behavior.</p>
+<p>That's roughly what SFT does.</p>
+<pre class="diagram">Pretraining = knowledge/capability
+
+SFT = behavioral shaping</pre>
+<p>The source explicitly describes SFT as <strong>supervised behavior shaping</strong>.</p>
+
+<h2>4. Core Mental Model and What the Training Data Looks Like</h2>
+<h3>Core Mental Model</h3>
+<p>Memorize this:</p>
+<pre class="diagram">             PRETRAINED MODEL
+                   │
+                   ▼
+             Prompt / Context
+                   │
+                   ▼
+         SFT Training Examples
+                   │
+                   ▼
+       Predict Target Response
+                   │
+                   ▼
+                Loss
+                   │
+                   ▼
+             Backpropagation
+                   │
+                   ▼
+         Update Model Parameters
+                   │
+                   ▼
+      Better Instruction Following</pre>
+<p>The critical idea is:</p>
+<div class="case-note"><strong>The model is learning a conditional response distribution from demonstrations.</strong></div>
+<h3>What Does the Training Data Look Like?</h3>
+<p>A typical SFT example can look like:</p>
+<pre class="diagram">{
+    "instruction": "Explain recursion",
+    "input": "",
+    "output": "Recursion is when a function calls itself..."
+}</pre>
+<p>Or conversationally:</p>
+<pre class="diagram">User:
+Explain recursion with a simple example.
+
+Assistant:
+Recursion is when a function calls itself...</pre>
+<p>With many such examples:</p>
+<pre class="diagram">Prompt 1 → Good Response 1
+Prompt 2 → Good Response 2
+Prompt 3 → Good Response 3
+Prompt 4 → Good Response 4
+...
+Prompt N → Good Response N</pre>
+<p>The model learns the statistical relationship between the input context and desired response.</p>
+
+<h2>5. Under the Hood</h2>
+<p>The source gives the following high-level execution process:</p>
+<pre class="diagram">1. Represent the state
+        ↓
+2. Fine-tune using prompt-response demonstrations
+        ↓
+3. Apply compute/memory/data constraints
+        ↓
+4. Preserve required state
+        ↓
+5. Validate failure boundaries</pre>
+<p>Let's translate that into ML terms.</p>
+<h3>Step 1 — Start with a pretrained model</h3>
+<p>Suppose we have:</p>
+<pre class="diagram">Llama / GPT-like base model</pre>
+<p>with parameters:</p>
+<div class="formula">θ</div>
+<p>These parameters already contain the knowledge learned during pretraining.</p>
+<h3>Step 2 — Give it an instruction</h3>
+<p>Suppose:</p>
+<pre class="diagram">x = "Explain transformers simply."</pre>
+<p>Desired answer:</p>
+<pre class="diagram">y = "Transformers are neural networks..."</pre>
+<p>Now the model tries to generate the target.</p>
+
+<h2>6. The SFT Loss Function and What It Means</h2>
+<h3>The SFT Loss Function</h3>
+<p>The source gives:</p>
+<div class="formula">L_SFT = −Σ_t log p_θ(y_t | x, y_&lt;t)</div>
+<p>Let's understand every symbol.</p>
+<table>
+<thead><tr><th>Symbol</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>L_SFT</code></td><td>SFT training loss</td></tr>
+<tr><td><code>x</code></td><td>input/instruction</td></tr>
+<tr><td><code>y_t</code></td><td>target token at position <code>t</code></td></tr>
+<tr><td><code>y_&lt;t</code></td><td>target tokens before <code>t</code></td></tr>
+<tr><td><code>p_θ</code></td><td>probability predicted by model</td></tr>
+<tr><td><code>θ</code></td><td>model parameters</td></tr>
+<tr><td><code>log</code></td><td>logarithm</td></tr>
+<tr><td><code>−</code></td><td>converts likelihood maximization into loss minimization</td></tr>
+</tbody>
+</table>
+<h3>What Does the Formula Actually Mean?</h3>
+<p>Suppose the target response is:</p>
+<pre class="diagram">"Paris is the capital."</pre>
+<p>The model generates one token at a time.</p>
+<pre class="diagram">Paris
+   ↓
+is
+   ↓
+the
+   ↓
+capital
+   ↓
+.</pre>
+<p>For every token, the model should assign a high probability to the correct next token.</p>
+<p>For example:</p>
+<pre class="diagram">Input:
+"The capital of France is"
+
+Model probabilities:
+
+Paris     → 0.90
+London    → 0.03
+Berlin    → 0.02
+Madrid    → 0.01
+...</pre>
+<p>The correct token is:</p>
+<pre class="diagram">Paris</pre>
+<p>So the loss is:</p>
+<div class="formula">−log(0.90)</div>
+<p>which is small.</p>
+<p>But if the model predicts:</p>
+<pre class="diagram">Paris → 0.10
+London → 0.60</pre>
+<p>then:</p>
+<div class="formula">−log(0.10)</div>
+<p>is much larger.</p>
+<p>Therefore:</p>
+<pre class="diagram">Correct response probability ↑
+        ↓
+Loss ↓
+        ↓
+Better training signal</pre>
+
+<h2>7. Why It Is Called "Supervised" and Why SFT Changes Behavior</h2>
+<h3>Why Is It Called "Supervised"?</h3>
+<p>Because we provide the desired answer.</p>
+<pre class="diagram">Input                         Target
+────────────────────────────────────────
+"Explain AI"           →      "AI is..."
+"Translate this"       →      "..."
+"Write Python code"    →      "def ..."</pre>
+<p>The target response acts as the supervision.</p>
+<p>Compare this with pretraining:</p>
+<pre class="diagram">Pretraining:
+
+"The sky is ___"
+
+Target:
+"blue"</pre>
+<p>The training signal comes naturally from the data.</p>
+<p>In SFT:</p>
+<pre class="diagram">Instruction
+    ↓
+Human/curated/synthetic desired response
+    ↓
+Training target</pre>
+<h3>Why SFT Changes Behavior</h3>
+<p>This is the most important conceptual part.</p>
+<p>Suppose the pretrained model has many possible responses:</p>
+<pre class="diagram">Prompt:
+"Explain Docker."
+
+Possible outputs:
+
+A. 2-line explanation
+B. 500-word explanation
+C. technical explanation
+D. beginner explanation
+E. tutorial
+F. definition</pre>
+<p>SFT data repeatedly shows the model:</p>
+<pre class="diagram">Prompt
+  ↓
+Preferred answer</pre>
+<p>The training process increases probability around those desired behaviors.</p>
+<p>Conceptually:</p>
+<pre class="diagram">Before SFT:
+
+       many possible behaviors
+         /  |  |  \
+        /   |  |   \
+       A    B  C    D
+
+
+After SFT:
+
+       desired behavior
+             │
+             ▼
+       preferred response</pre>
+<p>This is why the source calls SFT <strong>behavior shaping</strong>.</p>
+
+<h2>8. But SFT Does NOT Magically Create New Knowledge</h2>
+<p>This is a very important distinction.</p>
+<p>Suppose the base model doesn't know something.</p>
+<p>SFT is not automatically equivalent to:</p>
+<pre class="diagram">SFT → magically learn everything</pre>
+<p>Instead, SFT primarily changes the mapping:</p>
+<pre class="diagram">Input
+  ↓
+Desired behavior/output</pre>
+<p>It can also teach information contained in the fine-tuning data, but the central purpose described here is <strong>behavior shaping and instruction following</strong>.</p>
+</div>
+<div class="chapter-page">
+<div class="page-label">PAGE 2 · PRODUCTION, TRADE-OFFS, INTERVIEW REASONING</div>
+
+<h2>9. The Biggest Risk: Distribution Narrowing and Style Collapse</h2>
+<h3>The Biggest Risk: Distribution Narrowing</h3>
+<p>Now we reach the important engineering problem.</p>
+<p>Suppose you train SFT using only:</p>
+<pre class="diagram">100,000 customer-support examples</pre>
+<p>The model becomes extremely good at customer support.</p>
+<p>But what happens to other capabilities?</p>
+<p>Potentially:</p>
+<pre class="diagram">General capability
+       ↓
+SFT on narrow domain
+       ↓
+Behavior becomes specialized
+       ↓
+Capability regression / style collapse</pre>
+<p>The source identifies:</p>
+<div class="case-note"><strong>Overly narrow or duplicated SFT data can cause capability regression, style collapse, or benchmark overfitting.</strong></div>
+<h3>What Is Style Collapse?</h3>
+<p>Imagine the training dataset always contains answers like:</p>
+<pre class="diagram">"Certainly! I'd be happy to help you with that..."</pre>
+<p>After enough examples, the model may start producing that style everywhere.</p>
+<p>Even when inappropriate.</p>
+<p>For example:</p>
+<pre class="diagram">User:
+What is 2 + 2?
+
+Model:
+Certainly! I'd be happy to help you with that.
+The answer to this mathematical question is...</pre>
+<p>The model may become overly biased toward the training style.</p>
+<p>That's one reason <strong>data diversity matters</strong>.</p>
+
+<h2>10. Data Quality and Data Distribution</h2>
+<h3>SFT Data Quality Matters More Than "More Data"</h3>
+<p>A common mistake is:</p>
+<div class="case-note">"If 100K examples helped, 1M examples must help more."</div>
+<p>Not necessarily.</p>
+<p>The quality and distribution of the examples matter.</p>
+<p>Imagine:</p>
+<pre class="diagram">1,000 high-quality diverse examples
+
+vs.
+
+100,000 duplicated / narrow examples</pre>
+<p>The second dataset can potentially produce worse behavior.</p>
+<p>The source specifically identifies <strong>data quality and distribution narrowing</strong> as the main practical bottleneck.</p>
+<h3>Data Distribution Is Extremely Important</h3>
+<p>Suppose production looks like:</p>
+<pre class="diagram">Coding             30%
+Reasoning          20%
+Summarization      20%
+General Q&amp;A        20%
+Domain-specific    10%</pre>
+<p>But your SFT dataset looks like:</p>
+<pre class="diagram">Coding             90%
+General Q&amp;A        10%</pre>
+<p>You have a distribution mismatch.</p>
+<pre class="diagram">Training distribution
+        ≠
+Production distribution</pre>
+<p>So the model may look excellent on your SFT evaluation but behave poorly in production.</p>
+
+<h2>11. SFT vs RLHF / DPO</h2>
+<p>Think of the larger alignment pipeline:</p>
+<pre class="diagram">                    PRETRAINING
+                         │
+                         ▼
+                    BASE MODEL
+                         │
+                         ▼
+                       SFT
+                         │
+                         ▼
+             Instruction-following model
+                         │
+                         ▼
+                   RLHF / DPO
+                         │
+                         ▼
+             Preference-aligned model</pre>
+<p>Your uploaded material explicitly places <strong>RLHF / DPO / PPO</strong> as the next topic in the sequence.</p>
+<p>The conceptual difference:</p>
+<table>
+<thead><tr><th>Stage</th><th>Main question</th></tr></thead>
+<tbody>
+<tr><td>Pretraining</td><td>What patterns can the model learn?</td></tr>
+<tr><td>SFT</td><td>What response should I give to this instruction?</td></tr>
+<tr><td>Preference optimization</td><td>Which response do humans prefer?</td></tr>
+</tbody>
+</table>
+
+<h2>12. SFT Production Pipeline and Offline vs Online</h2>
+<h3>SFT Production Pipeline</h3>
+<p>The source recommends a production starting point based around dataset versioning, held-out task slices, and regression suites.</p>
+<p>A practical conceptual pipeline:</p>
+<pre class="diagram">               RAW DATA
+                  │
+                  ▼
+         Data Cleaning
+                  │
+                  ▼
+      Instruction Formatting
+                  │
+                  ▼
+       Deduplication / Filtering
+                  │
+                  ▼
+         Dataset Versioning
+                  │
+                  ▼
+             SFT TRAINING
+                  │
+                  ▼
+            Evaluation
+                  │
+         ┌────────┴────────┐
+         │                 │
+      PASS              FAIL
+         │                 │
+         ▼                 ▼
+      Promote          Investigate
+         │
+         ▼
+      Deployment</pre>
+<h3>Offline vs Online</h3>
+<p>One subtle point from the source is that the <strong>training process itself belongs in an offline/async path</strong>, while inference is the online critical path.</p>
+<h3>Offline</h3>
+<pre class="diagram">Data
+ ↓
+Validate
+ ↓
+Version
+ ↓
+Train SFT
+ ↓
+Evaluate
+ ↓
+Promote model</pre>
+<h3>Online</h3>
+<pre class="diagram">User Request
+     ↓
+Validation
+     ↓
+Inference
+     ↓
+Guard / Verify
+     ↓
+Response
+     ↓
+Telemetry</pre>
+<p>The source's production diagrams emphasize versioning, evaluation, explicit state ownership, replaceable workers, and isolation of slow/failure-prone dependencies.</p>
+
+<h2>13. Where SFT Starts to Hurt and What Usually Goes Wrong</h2>
+<h3>Where Does SFT Start to Hurt?</h3>
+<p>The interesting part is that the system can <strong>appear to improve</strong> while actually becoming less general.</p>
+<pre class="diagram">SFT benchmark
+     ↓
+Improves
+     ↓
+Looks successful
+     ↓
+But training distribution becomes narrow
+     ↓
+General capabilities regress
+     ↓
+Production edge cases fail</pre>
+<p>The source identifies the major pressure point as:</p>
+<div class="case-note"><strong>Data diversity and catastrophic style overfitting.</strong></div>
+<h3>What Usually Goes Wrong?</h3>
+<table>
+<thead><tr><th>Failure</th><th>Why it happens</th><th>What to measure</th></tr></thead>
+<tbody>
+<tr><td>Capability regression</td><td>Narrow/duplicated SFT data</td><td>Diverse evaluation slices</td></tr>
+<tr><td>Style collapse</td><td>Dataset over-represents one response style</td><td>Style/distribution tests</td></tr>
+<tr><td>Benchmark overfitting</td><td>Model learns evaluation-like patterns</td><td>Independent evaluation</td></tr>
+<tr><td>Offline good, production bad</td><td>Evaluation doesn't represent production</td><td>Production-shaped test sets</td></tr>
+<tr><td>p99/capacity problems</td><td>Resource/state behavior isn't bounded</td><td>Live resource + concurrency</td></tr>
+<tr><td>Hard-to-rollback model</td><td>Poor artifact/version management</td><td>Model + dataset versioning</td></tr>
+</tbody>
+</table>
+<p>The source explicitly calls out quality regression, p99/capacity collapse, and offline-good/online-bad failure modes.</p>
+
+<h2>14. SFT Trade-off and Research Background</h2>
+<h3>SFT Trade-off</h3>
+<p>The fundamental trade-off can be understood as:</p>
+<pre class="diagram">More behavior shaping
+        ↓
+More task-specific behavior
+        ↓
+Potentially less generality</pre>
+<p>So:</p>
+<div class="formula">Behavior alignment ↔ Capability preservation</div>
+<p>The source describes this as the trade-off between <strong>behavior alignment and capability drift</strong>.</p>
+<h3>Research Background</h3>
+<p>The source highlights two important research anchors.</p>
+<div class="source-card">
+<h3>1. Finetuned Language Models Are Zero-Shot Learners</h3>
+<div class="meta">Wei et al., 2021</div>
+<p>The work showed that multi-task instruction-style fine-tuning can improve generalization to unseen tasks.</p>
+<p><strong>Engineering lesson</strong></p>
+<p>Instruction data isn't simply about having more examples.</p>
+<p>You care about:</p>
+<pre class="diagram">Diversity
++
+Quality
++
+Task coverage</pre>
+</div>
+<div class="source-card">
+<h3>2. Self-Instruct</h3>
+<div class="meta">Wang et al., 2022</div>
+<p>The work used model-generated instructions and filtering to bootstrap instruction datasets.</p>
+<p>Conceptually:</p>
+<pre class="diagram">Existing LLM
+     ↓
+Generate instructions
+     ↓
+Generate responses
+     ↓
+Filter bad examples
+     ↓
+Create SFT dataset
+     ↓
+Train model</pre>
+<p>This is useful because manually creating millions of examples is expensive.</p>
+<p>But it creates another challenge:</p>
+<pre class="diagram">Synthetic data
+      ↓
+Quality control
+      ↓
+Contamination control
+      ↓
+Validation</pre>
+<p>The source specifically notes that synthetic data pipelines require quality and contamination controls.</p>
+</div>
+
+<h2>15. Production Case Study — FLAN / Instruction-Tuned Models</h2>
+<p>The source uses <strong>FLAN / instruction-tuned models</strong> as the production case study.</p>
+<h3>Problem</h3>
+<p>A base next-token model can possess knowledge about many tasks but doesn't necessarily follow user intent consistently.</p>
+<pre class="diagram">Base model
+    ↓
+Knows many things
+    ↓
+But task behavior isn't consistently aligned</pre>
+<h3>Intervention</h3>
+<p>Train on:</p>
+<pre class="diagram">Diverse instructions
+        +
+Desired responses
+        ↓
+SFT</pre>
+<h3>Resulting conceptual chain</h3>
+<pre class="diagram">Pretraining prior
+      ↓
+Instruction distribution
+      ↓
+Behavior shaping
+      ↓
+Alignment / generalization trade-off</pre>
+<p>The engineering lesson is important:</p>
+<div class="case-note"><strong>SFT improves a behavior distribution; it does not eliminate the need to evaluate edge cases.</strong></div>
+
+<h2>16. Engineer, Researcher, Senior Engineer, and First-Principles Perspectives</h2>
+<h3>AI Engineer Perspective</h3>
+<p>As an AI engineer, ask:</p>
+<p><strong>Data</strong></p>
+<pre class="diagram">Where does SFT data come from?
+How is it cleaned?
+How is it deduplicated?
+How is it versioned?</pre>
+<p><strong>Training</strong></p>
+<pre class="diagram">What is the loss?
+Which tokens contribute to loss?
+What is the training budget?</pre>
+<p><strong>Evaluation</strong></p>
+<pre class="diagram">Does the model improve on the target task?
+Did general capabilities regress?</pre>
+<p><strong>Production</strong></p>
+<pre class="diagram">What happens at p95/p99?
+Can we roll back?
+Can we reproduce this model?</pre>
+<p>The source's AI Engineer test emphasizes making the optimization objective, gradient/data path, ownership, metrics, and failure handling explicit.</p>
+<h3>AI Researcher Perspective</h3>
+<p>A researcher asks:</p>
+<div class="case-note"><strong>Why did SFT improve the result?</strong></div>
+<p>Not simply:</p>
+<div class="case-note">"The benchmark improved."</div>
+<p>You should ask:</p>
+<pre class="diagram">What was the baseline?
+        ↓
+What changed?
+        ↓
+What dataset?
+        ↓
+What scale?
+        ↓
+What metric?
+        ↓
+Does the result transfer?</pre>
+<p>The source explicitly recommends separating:</p>
+<ul>
+<li>proven/theoretical claims</li>
+<li>empirical findings</li>
+<li>engineering heuristics</li>
+</ul>
+<p>and checking whether conclusions survive changes in scale, data distribution, and evaluation metric.</p>
+<h3>Staff / Senior AI Engineer Perspective</h3>
+<p>At senior level, the question becomes:</p>
+<div class="case-note"><strong>Can this training approach survive production complexity?</strong></div>
+<p>Think about:</p>
+<pre class="diagram">Dataset version
+       ↓
+Training run
+       ↓
+Checkpoint
+       ↓
+Evaluation
+       ↓
+Model registry
+       ↓
+Deployment
+       ↓
+Monitoring
+       ↓
+Rollback</pre>
+<p>You need to know:</p>
+<ul>
+<li>where state lives</li>
+<li>how checkpoints are managed</li>
+<li>how distributed training is synchronized</li>
+<li>how results are reproduced</li>
+<li>what happens during degradation</li>
+<li>how rollback works</li>
+</ul>
+<p>The source specifically highlights optimizer state, distributed synchronization, checkpointing, reproducibility, ownership, degradation behavior, rollback, and observability.</p>
+<h3>First-Principles Thinking</h3>
+<p>Reduce the entire topic to:</p>
+<pre class="diagram">Required capability
+        ↓
+Binding constraint
+        ↓
+Changed computation
+        ↓
+New resource cost
+        ↓
+New failure mode</pre>
+<p>For SFT:</p>
+<pre class="diagram">Need instruction following
+        ↓
+Pretrained model doesn't specify desired behavior
+        ↓
+Train on instruction → response examples
+        ↓
+Model becomes biased toward demonstrated behaviors
+        ↓
+Narrow/duplicated data can cause capability drift</pre>
+<p>This is the <strong>cause → effect chain</strong> you should remember.</p>
+<p>The source explicitly recommends this first-principles reduction.</p>
+
+<h2>17. Interview Answer and Common Follow-ups</h2>
+<h3>Interview Answer — 30–45 Seconds</h3>
+<p>If an interviewer asks:</p>
+<div class="case-note"><strong>"What is Instruction Tuning / SFT?"</strong></div>
+<p>Say:</p>
+<div class="case-note"><strong>"Instruction tuning, or supervised fine-tuning, is the process of adapting a pretrained language model using instruction-response examples so that it learns to follow tasks and produce preferred responses. Pretraining gives the model broad language and statistical capabilities, but it doesn't uniquely specify how the model should respond to user instructions. During SFT, we minimize conditional negative log likelihood over target responses. The major trade-off is behavior alignment versus capability drift: narrow or duplicated data can cause style collapse or regression in general capabilities. In production, I'd focus not only on benchmark improvement but also on dataset diversity, evaluation slices, versioning, rollback, and p95/p99 behavior."</strong></div>
+<p>This follows the source's interview framing and operational emphasis.</p>
+<h3>Common Interview Follow-ups</h3>
+<h3>Q1. Why do we need SFT if we already have pretraining?</h3>
+<p>Because:</p>
+<pre class="diagram">Pretraining → broad capabilities
+SFT         → desired task behavior</pre>
+<h3>Q2. What loss does SFT use?</h3>
+<p>Typically conditional negative log likelihood:</p>
+<div class="formula">L_SFT = −Σ_t log p_θ(y_t | x, y_&lt;t)</div>
+<h3>Q3. What is the biggest risk?</h3>
+<pre class="diagram">Narrow / duplicated SFT data
+          ↓
+Distribution narrowing
+          ↓
+Capability regression
+Style collapse
+Benchmark overfitting</pre>
+<h3>Q4. Why can offline evaluation look good but production fail?</h3>
+<p>Because:</p>
+<pre class="diagram">Evaluation distribution
+        ≠
+Production distribution</pre>
+<p>The source explicitly recommends comparing production traces against evaluation slices and adding deployment-shaped regressions.</p>
+<h3>Q5. Is more SFT data always better?</h3>
+<p>No.</p>
+<p>You care about:</p>
+<pre class="diagram">Quality
++
+Diversity
++
+Coverage
++
+Distribution</pre>
+<p>not merely dataset size.</p>
+
+<h2>18. SFT in the Larger LLM Stack and the Most Important Distinction</h2>
+<h3>SFT in the Larger LLM Stack</h3>
+<p>You should visualize the entire pipeline:</p>
+<pre class="diagram">                RAW DATA
+                   │
+                   ▼
+            PRETRAINING
+                   │
+                   ▼
+             BASE MODEL
+                   │
+                   ▼
+                 SFT
+                   │
+                   ▼
+      Instruction-following model
+                   │
+                   ▼
+         RLHF / DPO / PPO
+                   │
+                   ▼
+         Preference-aligned model
+                   │
+                   ▼
+           Evaluation / Safety
+                   │
+                   ▼
+             Deployment
+                   │
+                   ▼
+         Monitoring / Feedback</pre>
+<p>The source itself recommends studying SFT as part of:</p>
+<p><strong>architecture → training objective → optimization → inference/runtime → distributed systems → evaluation → safety/reliability.</strong></p>
+<h3>The Most Important Distinction</h3>
+<p>Don't confuse these three:</p>
+<table>
+<thead><tr><th>Concept</th><th>Main purpose</th></tr></thead>
+<tbody>
+<tr><td><strong>Pretraining</strong></td><td>Learn broad statistical structure</td></tr>
+<tr><td><strong>SFT / Instruction Tuning</strong></td><td>Shape desired instruction-following behavior</td></tr>
+<tr><td><strong>RLHF / DPO / PPO</strong></td><td>Optimize toward preference signals</td></tr>
+</tbody>
+</table>
+<p>So remember:</p>
+<pre class="diagram">Pretraining
+"What can I learn?"
+
+        ↓
+
+SFT
+"How should I respond to instructions?"
+
+        ↓
+
+Preference optimization
+"Which of these possible responses is preferred?"</pre>
+
+<h2>19. The Production Decision Rule</h2>
+<p>A very important line from the source:</p>
+<div class="case-note"><strong>Do not treat a better benchmark score as automatically being a deployment decision.</strong></div>
+<p>Instead:</p>
+<pre class="diagram">Does it solve the binding constraint?
+          │
+          ├── NO → Don't optimize it
+          │
+          └── YES
+                ↓
+Does resource/state cost fit SLO?
+                │
+                ├── NO → Redesign
+                │
+                └── YES
+                      ↓
+Does evaluation match production?
+                      │
+                      ├── NO → Improve evaluation
+                      │
+                      └── YES → Consider deployment</pre>
+
+<h2>20. Mental Model, Diagram, Cause → Effect Chain, and Final Takeaway</h2>
+<h3>One Mental Model to Memorize</h3>
+<pre class="diagram">PRETRAINING
+    │
+    │ learns broad statistical structure
+    ▼
+BASE MODEL
+    │
+    │ SFT examples:
+    │ instruction → desired response
+    ▼
+BEHAVIOR SHAPING
+    │
+    ├── better instruction following
+    │
+    └── risk:
+        narrow data
+        ↓
+        capability drift
+        style collapse
+        overfitting</pre>
+<h3>One Diagram to Memorize for Interviews</h3>
+<pre class="diagram">        PRETRAINED MODEL
+               │
+               ▼
+       Instruction + Context
+               │
+               ▼
+      Desired Target Response
+               │
+               ▼
+          Token Loss
+               │
+               ▼
+        Backpropagation
+               │
+               ▼
+       Updated Parameters
+               │
+               ▼
+      Better Instruction Following
+               │
+               ▼
+     ┌──────────────────────┐
+     │ Evaluate Generality  │
+     │ + Quality + p95/p99  │
+     └──────────────────────┘</pre>
+<h3>Cause → Effect Chain</h3>
+<div class="topic-check"><code>Pretraining gives broad capability
+            ↓
+But desired behavior is underspecified
+            ↓
+Create instruction-response demonstrations
+            ↓
+Optimize conditional response likelihood
+            ↓
+Model learns demonstrated behavior
+            ↓
+Instruction following improves
+            ↓
+But distribution becomes more important
+            ↓
+Narrow/duplicated data can cause capability drift
+            ↓
+Therefore evaluate both target behavior
+and preserved general capability</code></div>
+<h3>Final Takeaway</h3>
+<p><strong>In one sentence:</strong></p>
+<div class="case-note"><strong>SFT is supervised behavior shaping: take a pretrained model and train it on high-quality instruction-response demonstrations so that it learns the response behavior we want.</strong></div>
+<p><strong>If you remember only 5 things:</strong></p>
+<ol>
+<li><strong>Pretraining gives broad capabilities; SFT shapes behavior.</strong></li>
+<li><strong>SFT learns from instruction → preferred response examples.</strong></li>
+<li><strong>The core objective is conditional negative log likelihood.</strong></li>
+<li><strong>Data quality and diversity are critical; narrow/duplicated data can cause capability regression and style collapse.</strong></li>
+<li><strong>A better benchmark is not enough—production evaluation must match the real deployment distribution.</strong></li>
+</ol>
+</div>
+<div class="status">Decision checkpoint — SFT is supervised behavior shaping: the model learns a conditional response distribution defined by the demonstrations.</div>
+<div class="chapter-nav"><a href="pretraining-objectives.html">← Previous</a><a href="../index.html">Contents ↑</a><a href="rlhf-dpo-ppo.html">Next →</a></div>
+</section>
+</main>
+</div>
+<footer><a href="../index.html">Contents</a> &middot; <a href="../assets/glossary.html">Glossary</a></footer>
+<script src="../assets/glossary.js"></script>
+</body></html>

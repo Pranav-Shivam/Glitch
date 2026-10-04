@@ -1,0 +1,2477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/><meta content="width=device-width,initial-scale=1" name="viewport"/>
+<title>Transformer Architecture — AI Engineering &amp; Research Deep Dive</title>
+<link rel="stylesheet" href="../assets/style.css"/>
+</head>
+<body id="top">
+<div class="layout single">
+<main>
+<section class="chapter" data-category="Foundations" id="t2">
+<div class="chapter-kicker">Foundations · Chapter 02 / 101</div>
+<h1>Transformer Architecture</h1>
+<p class="lede">A production-and-research treatment for engineers who already know ML, neural networks, and Transformer fundamentals. Each chapter splits into two pages: <strong>mechanism</strong> first, then systems, failure modes, and research reasoning.</p><div class="plain-bridge"><div class="plain-label">In plain English</div><p>A Transformer is a stack of repeated blocks that <strong>mix information between tokens</strong> and then <strong>transform that information</strong>. By repeating this process, token representations become more and more contextual.</p></div>
+<div class="chapter-page">
+<div class="page-label">PAGE 1 · MECHANISM, MENTAL MODEL, THEORY</div>
+<h2>1. The Big Picture</h2>
+<p>Let's start with a simple sentence:</p>
+<div class="case-note"><strong>"The boy went to the bank because he needed money."</strong></div>
+<p>At the beginning, each token has its own representation.</p>
+<pre class="diagram">"The"   "boy"   "went"   "to"   "the"   "bank"   "because"   "he"   "needed"   "money"
+  │       │       │       │      │        │          │         │        │          │
+  ▼       ▼       ▼       ▼      ▼        ▼          ▼         ▼        ▼          ▼
+ Token representations</pre>
+<p>But the word:</p>
+<pre class="diagram">"bank"</pre>
+<p>can mean different things depending on context.</p>
+<p>After looking at surrounding information:</p>
+<pre class="diagram">"The boy went to the bank because he needed money."
+
+                         ↓
+
+bank ≈ financial institution</pre>
+<p>rather than:</p>
+<pre class="diagram">bank ≈ river bank</pre>
+<p>This is the basic idea behind a Transformer:</p>
+<div class="status"><strong>Start with token representations and repeatedly make them more contextual.</strong></div>
+<p>The source describes a Transformer as:</p>
+<div class="status"><strong>A residual stack of attention and feed-forward blocks that alternates token mixing with per-token nonlinear feature transformation.</strong></div>
+<h3>Transformer in One Sentence</h3>
+<p>A very useful sentence to remember is:</p>
+<div class="status"><strong>A Transformer repeatedly mixes information between tokens using attention and then transforms each token's features using an MLP, while residual connections preserve the existing representation.</strong></div>
+<p>Think:</p>
+<pre class="diagram">Token information
+      ↓
+Mix information
+      ↓
+Transform information
+      ↓
+Keep old + new information
+      ↓
+Repeat</pre>
+<p>That is the architecture.</p>
+<h3>The Most Important Mental Model</h3>
+<p>Imagine you have a group of people sitting in a room.</p>
+<p>At first:</p>
+<pre class="diagram">Person A → knows their own information
+Person B → knows their own information
+Person C → knows their own information
+Person D → knows their own information</pre>
+<p>Then they talk to each other.</p>
+<pre class="diagram">A ─────┐
+B ─────┼──► Everyone learns from everyone relevant
+C ─────┤
+D ─────┘</pre>
+<p>That is the <strong>attention</strong> part.</p>
+<p>But after listening to everyone, each person also needs to <strong>process and update their own understanding</strong>.</p>
+<pre class="diagram">Listen to others
+      ↓
+Process what you learned
+      ↓
+Update your understanding</pre>
+<p>That is the <strong>MLP / feed-forward</strong> part.</p>
+<p>Now repeat:</p>
+<pre class="diagram">Round 1
+  ↓
+Round 2
+  ↓
+Round 3
+  ↓
+...
+  ↓
+Round N</pre>
+<p>That is essentially a Transformer stack.</p>
+<h3>The Architecture at a High Level</h3>
+<p>The source's mental model is:</p>
+<pre class="diagram">Input / current state
+        │
+        ▼
+Repeated pre-normalized
+Attention + MLP blocks
+with residual paths
+        │
+        ▼
+Updated state / output</pre>
+<p>Let's turn that into a fuller picture:</p>
+<pre class="diagram">                    INPUT TOKENS
+                         │
+                         ▼
+                   Token embeddings
+                         │
+                         ▼
+                 Positional signal
+                         │
+                         ▼
+              ┌─────────────────────┐
+              │ Transformer Block 1 │
+              └──────────┬──────────┘
+                         │
+                         ▼
+              ┌─────────────────────┐
+              │ Transformer Block 2 │
+              └──────────┬──────────┘
+                         │
+                         ▼
+              ┌─────────────────────┐
+              │ Transformer Block 3 │
+              └──────────┬──────────┘
+                         │
+                         ▼
+                        ...
+                         │
+                         ▼
+              ┌─────────────────────┐
+              │ Transformer Block N │
+              └──────────┬──────────┘
+                         │
+                         ▼
+                      Output</pre>
+<p>The key word is:</p>
+<div class="status"><strong>STACK</strong></div>
+<p>A Transformer is not just one attention operation.</p>
+<p>It is <strong>many repeated blocks</strong>.</p>
+<h2>2. What Is Inside One Transformer Block?</h2>
+<p>The source gives the core equations:</p>
+<div class="formula">xₗ₊₁ = xₗ + Attn(Norm(xₗ))<br/>xₗ₊₂ = xₗ₊₁ + MLP(Norm(xₗ₊₁))</div>
+<p>So think of one block as:</p>
+<pre class="diagram">             Input x
+                │
+                ▼
+             Normalize
+                │
+                ▼
+            Attention
+                │
+                ▼
+          Add residual
+                │
+                ▼
+          Normalize again
+                │
+                ▼
+              MLP
+                │
+                ▼
+          Add residual
+                │
+                ▼
+             Output</pre>
+<p>This is one of the most important diagrams in the topic.</p>
+<h3>The Two Main Jobs Inside a Transformer</h3>
+<p>A Transformer block performs two major jobs.</p>
+<p><strong>Job 1 — Attention</strong></p>
+<div class="status"><strong>Mix information between tokens.</strong></div>
+<pre class="diagram">Token A ─────┐
+Token B ─────┤
+Token C ─────┼──► Token representations exchange information
+Token D ─────┤
+Token E ─────┘</pre>
+<p>Attention answers:</p>
+<div class="case-note"><strong>"Which other tokens are relevant to me?"</strong></div>
+<p><strong>Job 2 — MLP</strong></p>
+<div class="status"><strong>Transform the features of each token.</strong></div>
+<p>After attention gives a token useful information, the MLP processes the token's updated representation.</p>
+<pre class="diagram">Token representation
+        │
+        ▼
+       MLP
+        │
+        ▼
+Transformed representation</pre>
+<p>So the easiest memory trick is:</p>
+<pre class="diagram">Attention = communication
+
+MLP = processing</pre>
+<p>Or:</p>
+<pre class="diagram">Attention → "Talk to others"
+
+MLP       → "Think about what you heard"</pre>
+<div class="plain-bridge"><div class="plain-label">Layman Story: Team Meeting</div>
+<p>Imagine four engineers working on a problem.</p>
+<p><strong>Before the meeting</strong></p>
+<p>Everyone knows:</p>
+<pre class="diagram">Engineer A → their own information
+Engineer B → their own information
+Engineer C → their own information
+Engineer D → their own information</pre>
+<p><strong>During the meeting</strong></p>
+<p>They share information:</p>
+<pre class="diagram">A ─────┐
+B ─────┼──► Team knowledge becomes richer
+C ─────┤
+D ─────┘</pre>
+<p>This is similar to <strong>attention</strong>.</p>
+<p><strong>After the meeting</strong></p>
+<p>Each engineer processes what they heard and updates their own understanding.</p>
+<pre class="diagram">What I knew
+    +
+What I learned
+    ↓
+New understanding</pre>
+<p>This is similar to the <strong>MLP + residual update</strong>.</p>
+<p>Then another meeting happens.</p>
+<pre class="diagram">Meeting 1
+   ↓
+Update
+   ↓
+Meeting 2
+   ↓
+Update
+   ↓
+Meeting 3</pre>
+<p>That's the Transformer stack.</p>
+</div>
+<h2>3. Layers and Contextualization</h2>
+<h3>Why Do We Need Multiple Layers?</h3>
+<p>One layer can establish some contextual relationships.</p>
+<p>But deeper layers allow the representation to be transformed repeatedly.</p>
+<p>Think:</p>
+<pre class="diagram">Layer 1
+"Who is related to whom?"
+
+        ↓
+
+Layer 2
+"What does that relationship mean?"
+
+        ↓
+
+Layer 3
+"How should that information affect the representation?"
+
+        ↓
+
+Layer 4
+"How does that new representation interact with other tokens?"
+
+        ↓
+
+...</pre>
+<p>This is why the source describes token embeddings as becoming <strong>progressively contextualized representations</strong>.</p>
+<h3>What Does "Contextualized" Mean?</h3>
+<p>Suppose the word is:</p>
+<pre class="diagram">"bank"</pre>
+<p>At the start, the representation contains relatively general information.</p>
+<p>After several layers:</p>
+<pre class="diagram">Input
+
+"bank"
+
+   ↓
+
+Attention sees:
+
+"money"
+"account"
+"loan"
+
+   ↓
+
+Representation changes
+
+   ↓
+
+"bank" now carries stronger financial context</pre>
+<p>So:</p>
+<div class="status"><strong>Contextualization means the representation of a token changes based on the surrounding information.</strong></div>
+<h3>Why Is This Better Than Treating Each Token Separately?</h3>
+<p>Without token interaction:</p>
+<pre class="diagram">"The" → independent
+"boy" → independent
+"bank" → independent
+"money" → independent</pre>
+<p>The model would miss relationships.</p>
+<p>With attention:</p>
+<pre class="diagram">"The"
+   ↕
+"boy"
+   ↕
+"bank"
+   ↕
+"money"</pre>
+<p>The representations influence one another.</p>
+<p>So the Transformer builds a <strong>context-aware representation</strong> of the sequence.</p>
+<h2>4. Residual Connections and Normalization</h2>
+<h3>Why Residual Connections?</h3>
+<p>This is a very important architectural idea.</p>
+<p>The equation is:</p>
+<div class="formula">xₗ₊₁ = xₗ + Attn(Norm(xₗ))</div>
+<p>Notice the:</p>
+<pre class="diagram">xₗ +</pre>
+<p>The old representation is not thrown away.</p>
+<p>Instead:</p>
+<pre class="diagram">Old information
+     +
+New information
+     ↓
+Updated information</pre>
+<div class="plain-bridge"><div class="plain-label">Layman Story: Editing a Document</div>
+<p>Imagine you have a document.</p>
+<p>Version 1:</p>
+<pre class="diagram">Original document</pre>
+<p>Now you improve one section.</p>
+<p>You don't throw away the whole document.</p>
+<p>You do:</p>
+<pre class="diagram">Original document
+      +
+New improvement
+      ↓
+Updated document</pre>
+<p>Residual connections work with a similar intuition.</p>
+<pre class="diagram">Input ───────────────┐
+  │                  │
+  ▼                  │
+Transformation        │
+  │                  │
+  └────────► Add ◄────┘
+              │
+              ▼
+            Output</pre>
+<p>This lets the network preserve useful information while adding new transformations.</p>
+</div>
+<h3>Why Residual Connections Matter</h3>
+<p>Without a residual path:</p>
+<pre class="diagram">x
+ ↓
+Transformation
+ ↓
+new x</pre>
+<p>With residual:</p>
+<pre class="diagram">         ┌──────────────────┐
+         │                  │
+         ▼                  │
+x ───► Transformation ──────┼──► Add
+                            │
+         └──────────────────┘</pre>
+<p>The original representation has a direct path forward.</p>
+<p>This becomes especially important in a <strong>deep stack</strong>.</p>
+<p>The source emphasizes that residual streams are the backbone of the architecture.</p>
+<h3>What Is Normalization Doing?</h3>
+<p>The Transformer block uses:</p>
+<pre class="diagram">Norm(x)</pre>
+<p>before attention and MLP in the source's pre-normalized formulation.</p>
+<p>So:</p>
+<pre class="diagram">x
+ ↓
+Normalize
+ ↓
+Attention
+ ↓
+Residual Add</pre>
+<p>and:</p>
+<pre class="diagram">x
+ ↓
+Normalize
+ ↓
+MLP
+ ↓
+Residual Add</pre>
+<p>This arrangement is generally called <strong>pre-norm</strong>.</p>
+<p>The source specifically points to <strong>normalization placement and optimization stability</strong> and notes that pre-norm variants are commonly preferred for deep training stability.</p>
+<div class="plain-bridge"><div class="plain-label">Layman Story: Stabilizing a Process</div>
+<p>Imagine a factory.</p>
+<p>Before every major machine, you normalize the incoming material so the machine receives something within a predictable operating range.</p>
+<pre class="diagram">Raw input
+   ↓
+Normalize
+   ↓
+Machine
+   ↓
+Output</pre>
+<p>The exact neural-network mathematics is different, but the intuition is useful:</p>
+<div class="status"><strong>Normalization helps keep the transformations in a manageable regime.</strong></div>
+</div>
+<h3>One Complete Transformer Block</h3>
+<p>Now combine everything:</p>
+<pre class="diagram">                    INPUT x
+                       │
+                       ▼
+                    Normalize
+                       │
+                       ▼
+                   Attention
+                       │
+                       ▼
+                  Residual Add
+                       │
+                       ▼
+                    Normalize
+                       │
+                       ▼
+                      MLP
+                       │
+                       ▼
+                  Residual Add
+                       │
+                       ▼
+                   OUTPUT</pre>
+<p>Or mathematically:</p>
+<div class="formula">xₗ₊₁ = xₗ + Attn(Norm(xₗ))<br/>xₗ₊₂ = xₗ₊₁ + MLP(Norm(xₗ₊₁))</div>
+<h2>5. The MLP and the Full Pipeline</h2>
+<h3>What Is the MLP Doing?</h3>
+<p>The Transformer is not just attention.</p>
+<p>After attention mixes token information, the MLP applies a nonlinear transformation to each token's representation.</p>
+<p>Conceptually:</p>
+<pre class="diagram">Token representation
+        │
+        ▼
+Linear transformation
+        │
+        ▼
+Nonlinear transformation
+        │
+        ▼
+Another transformation
+        │
+        ▼
+Updated token features</pre>
+<p>The source calls this the <strong>per-token nonlinear feature transformation</strong> part of the architecture.</p>
+<p>The important distinction is:</p>
+<pre class="diagram">Attention:
+Information moves BETWEEN tokens.
+
+MLP:
+Features are transformed WITHIN each token representation.</pre>
+<h3>Attention vs MLP</h3>
+<p>This comparison is worth memorizing.</p>
+<table><thead><tr><th>Component</th><th>Main job</th><th>Simple analogy</th></tr></thead><tbody><tr><td><strong>Attention</strong></td><td>Mix information between tokens</td><td>Talking to other people</td></tr><tr><td><strong>MLP</strong></td><td>Transform each token's features</td><td>Thinking about what you heard</td></tr><tr><td><strong>Residual connection</strong></td><td>Preserve previous representation while adding new information</td><td>Keeping your old notes while adding new notes</td></tr><tr><td><strong>Normalization</strong></td><td>Stabilize the representation before transformation</td><td>Keeping the process in a manageable range</td></tr></tbody></table>
+<h3>The Full Transformer Pipeline</h3>
+<p>The source's interview framing gives:</p>
+<pre class="diagram">embed
+   ↓
+positional signal
+   ↓
+repeated attention / MLP residual blocks
+   ↓
+normalization
+   ↓
+logits</pre>
+<p>Let's visualize it:</p>
+<pre class="diagram">                 INPUT TOKENS
+                      │
+                      ▼
+                Token Embeddings
+                      │
+                      ▼
+               Positional Signal
+                      │
+                      ▼
+          ┌─────────────────────────┐
+          │ Transformer Block 1     │
+          └────────────┬────────────┘
+                       │
+          ┌────────────▼────────────┐
+          │ Transformer Block 2     │
+          └────────────┬────────────┘
+                       │
+                      ...
+                       │
+          ┌────────────▼────────────┐
+          │ Transformer Block N     │
+          └────────────┬────────────┘
+                       │
+                       ▼
+                  Normalization
+                       │
+                       ▼
+                     Logits</pre>
+<h3>Why Do We Need a Positional Signal?</h3>
+<p>Attention lets tokens interact with one another, but a sequence also has an order.</p>
+<p>For example:</p>
+<pre class="diagram">"dog bites man"</pre>
+<p>is different from:</p>
+<pre class="diagram">"man bites dog"</pre>
+<p>The words are similar, but the arrangement changes the meaning.</p>
+<p>The Transformer architecture therefore includes a <strong>positional signal</strong> before the repeated blocks in the source's interview pipeline.</p>
+<p>A simple mental model is:</p>
+<pre class="diagram">Token meaning
+      +
+Position information
+      ↓
+Representation</pre>
+<p>So the model knows not only:</p>
+<div class="case-note">"Which tokens are present?"</div>
+<p>but also:</p>
+<div class="case-note">"Where do they occur?"</div>
+<h3>What Are Logits?</h3>
+<p>At the end of the stack, the model produces values used for prediction.</p>
+<p>These are commonly called <strong>logits</strong>.</p>
+<p>Conceptually:</p>
+<pre class="diagram">Final hidden representation
+          │
+          ▼
+       Logits
+          │
+          ▼
+Predicted token probabilities</pre>
+<p>A simple way to remember:</p>
+<div class="status"><strong>Hidden states = what the model currently knows internally.</strong></div>
+<div class="status"><strong>Logits = scores used to make the final prediction.</strong></div>
+<p>The source includes logits in its production/interview pipeline.</p>
+<h2>6. The Stack and the Residual Stream</h2>
+<h3>Why Transformers Need a Stack</h3>
+<p>The architecture can be viewed as repeated state transformation.</p>
+<pre class="diagram">x₀
+ │
+ ▼
+Block 1
+ │
+ ▼
+x₁
+ │
+ ▼
+Block 2
+ │
+ ▼
+x₂
+ │
+ ▼
+Block 3
+ │
+ ▼
+x₃
+ │
+ ▼
+...
+ │
+ ▼
+xₙ</pre>
+<p>Each layer changes the representation while retaining access to previous information through the residual path.</p>
+<p>This is why the source calls the Transformer:</p>
+<div class="status"><strong>a stack of repeated state transformations</strong>.</div>
+<h3>The "Residual Stream" Mental Model</h3>
+<p>A very useful way to think about the architecture is:</p>
+<pre class="diagram">                 RESIDUAL STREAM
+──────────────────────────────────────────────►
+
+        │               │               │
+        ▼               ▼               ▼
+
+     Attention         MLP           Attention
+        │               │               │
+        ▼               ▼               ▼
+     Add info         Add info       Add info
+        │               │               │
+
+──────────────────────────────────────────────►</pre>
+<p>The residual stream is like the <strong>main road</strong>.</p>
+<p>Attention and MLP are like transformations that temporarily process information and then return their results to the main road.</p>
+<p>The source explicitly describes residual streams as the <strong>backbone</strong> of the architecture.</p>
+<div class="plain-bridge"><div class="plain-label">Layman Story: Notebook</div>
+<p>Imagine you're solving a difficult problem in a notebook.</p>
+<p>You maintain one main page:</p>
+<pre class="diagram">MAIN NOTES</pre>
+<p>Each time you learn something new:</p>
+<pre class="diagram">Old notes
+   +
+New insight
+   ↓
+Updated notes</pre>
+<p>You don't erase the old page every time.</p>
+<p>That main page is a useful intuition for the residual stream.</p>
+</div>
+<h2>7. What Problem Did the Transformer Solve?</h2>
+<p>The source states the core problem as:</p>
+<div class="status"><strong>Sequence modeling needs global dependency access without recurrence, while hardware strongly favors large parallel matrix operations.</strong></div>
+<p>This contains two separate ideas.</p>
+<p><strong>Problem 1 — Need global dependency access</strong></p>
+<p>Tokens need information from other tokens.</p>
+<pre class="diagram">Token A ─────────────► Token Z</pre>
+<p>We don't want information to depend entirely on long sequential chains.</p>
+<p><strong>Problem 2 — Hardware likes parallel matrix operations</strong></p>
+<p>Modern accelerators are very good at:</p>
+<pre class="diagram">Matrix × Matrix</pre>
+<p>and other large parallel operations.</p>
+<p>Transformers fit naturally into this style of computation.</p>
+<p>So the architecture wasn't just useful mathematically.</p>
+<p>It was also a good match for modern hardware.</p>
+<div class="plain-bridge"><div class="plain-label">Layman Story: Factory</div>
+<p>Imagine two manufacturing systems.</p>
+<p><strong>Factory A</strong></p>
+<p>Workers must finish one item completely before starting another.</p>
+<pre class="diagram">Worker 1
+   ↓
+Worker 2
+   ↓
+Worker 3
+   ↓
+Worker 4</pre>
+<p>Very sequential.</p>
+<p><strong>Factory B</strong></p>
+<p>Many machines work on large batches simultaneously.</p>
+<pre class="diagram">Machine A ─┐
+Machine B ─┼──► Parallel production
+Machine C ─┤
+Machine D ─┘</pre>
+<p>Modern hardware strongly favors the second style.</p>
+<p>Transformers make heavy use of operations that can be efficiently parallelized during training.</p>
+<p>The source explicitly connects the architecture's design to hardware preference for large parallel matrix operations.</p>
+</div>
+<h3>Why Removing Recurrence Matters</h3>
+<p>A recurrent architecture conceptually looks like:</p>
+<pre class="diagram">Token 1
+  ↓
+Token 2
+  ↓
+Token 3
+  ↓
+Token 4</pre>
+<p>A Transformer can process token interactions using matrix-style operations.</p>
+<p>Conceptually:</p>
+<pre class="diagram">Token 1 ─┬──────────┐
+Token 2 ─┼──────────┤
+Token 3 ─┼──► attention
+Token 4 ─┼──────────┤
+Token 5 ─┴──────────┘</pre>
+<p>This provides a much more parallel-friendly computation pattern.</p>
+<h3>But Parallelism Doesn't Mean Everything Is Free</h3>
+<p>This is an important engineering lesson.</p>
+<p>Transformers make excellent use of parallel computation.</p>
+<p>But the cost moves elsewhere.</p>
+<p>The source explicitly says the architectural change shifts pressure toward:</p>
+<div class="status"><strong>activation/KV memory and communication</strong>.</div>
+<p>So:</p>
+<pre class="diagram">Old bottleneck
+      ↓
+Change architecture
+      ↓
+New bottleneck
+      ↓
+Memory + communication</pre>
+<p>That is a recurring systems pattern.</p>
+<h3>The Most Important Production Insight</h3>
+<p>The source's key production message is:</p>
+<div class="status"><strong>Do not assume the architecture itself is the bottleneck. Measure the new bottleneck.</strong></div>
+<p>A naive engineer might think:</p>
+<pre class="diagram">Transformer
+   ↓
+Lots of matrix operations
+   ↓
+Need more compute</pre>
+<p>But actual production pressure could instead be:</p>
+<pre class="diagram">Transformer
+   │
+   ├── Activation memory
+   ├── KV memory
+   ├── Communication
+   ├── Memory movement
+   └── Serving state</pre>
+<h2>8. Activation Memory, KV Memory, and Scaling</h2>
+<h3>What Is Activation Memory?</h3>
+<p>During neural-network execution, intermediate representations are created.</p>
+<p>You can imagine:</p>
+<pre class="diagram">Input
+  ↓
+Layer 1 output
+  ↓
+Layer 2 output
+  ↓
+Layer 3 output
+  ↓
+...</pre>
+<p>Those intermediate states can consume memory.</p>
+<p>Conceptually:</p>
+<pre class="diagram">Model depth ↑
+      +
+Batch size ↑
+      +
+Sequence length ↑
+      ↓
+More activation state</pre>
+<p>The source identifies <strong>activation/KV memory</strong> as a major scaling pressure.</p>
+<h3>What Is KV Memory?</h3>
+<p>During Transformer inference/decoding, attention can maintain <strong>Key/Value state</strong> from previous tokens.</p>
+<p>Conceptually:</p>
+<pre class="diagram">Previous tokens
+      ↓
+Stored K / V
+      ↓
+Reuse during later decoding</pre>
+<p>So as the sequence grows:</p>
+<pre class="diagram">More generated / remembered context
+          ↓
+More KV state
+          ↓
+More memory pressure</pre>
+<p>The source specifically calls out KV memory as part of the practical bottleneck.</p>
+<h3>Training vs Decoding</h3>
+<p>The source says:</p>
+<div class="case-note">A Transformer can be understood as a stack of repeated state transformations whose <strong>dominant cost changes between training and decoding</strong>.</div>
+<p>That is important.</p>
+<p>Think:</p>
+<pre class="diagram">                 Transformer workload
+                        │
+             ┌──────────┴──────────┐
+             ▼                     ▼
+          Training               Decoding
+             │                     │
+             ▼                     ▼
+      Large parallel work     Growing serving state</pre>
+<p>The architecture is the same at a high level, but the workload characteristics differ.</p>
+<p>This is why production optimization must be workload-aware.</p>
+<h3>Scaling the Architecture</h3>
+<p>A Transformer is often described in terms of:</p>
+<pre class="diagram">Depth
+Width
+Heads
+MLP ratio</pre>
+<p>The source says these should be chosen <strong>jointly with parallelism</strong>.</p>
+<p>Let's make those terms intuitive.</p>
+<p><strong>Depth</strong></p>
+<p>How many Transformer blocks do we have?</p>
+<pre class="diagram">Block 1
+Block 2
+Block 3
+...
+Block N</pre>
+<p>So:</p>
+<div class="status"><strong>Depth = number of repeated layers.</strong></div>
+<p><strong>Width</strong></p>
+<p>How large is the internal representation?</p>
+<p>Think:</p>
+<pre class="diagram">Small representation
+        ↓
+Medium representation
+        ↓
+Large representation</pre>
+<p>Larger width generally means more computation and memory per layer.</p>
+<p><strong>Number of Heads</strong></p>
+<p>Attention can be organized into multiple heads.</p>
+<p>The simple mental model:</p>
+<pre class="diagram">                Attention
+                    │
+        ┌───────────┼───────────┐
+        ▼           ▼           ▼
+      Head 1      Head 2      Head 3
+        │           │           │
+        └───────────┼───────────┘
+                    ▼
+                 Combined</pre>
+<p>Each head can learn different interaction patterns.</p>
+<p><strong>MLP Ratio</strong></p>
+<p>This controls the internal size of the feed-forward transformation relative to the model representation.</p>
+<p>Conceptually:</p>
+<pre class="diagram">Model width
+     │
+     ▼
+MLP hidden width</pre>
+<p>The important production point from the source is:</p>
+<div class="case-note">These architecture dimensions should be considered together with the parallelism strategy, rather than optimized independently.</div>
+<h2>9. The Full Architecture, Block by Block</h2>
+<h3>A Transformer as a Repeated State Machine</h3>
+<p>You can think of:</p>
+<pre class="diagram">x₀
+ ↓
+Block
+ ↓
+x₁
+ ↓
+Block
+ ↓
+x₂
+ ↓
+Block
+ ↓
+x₃</pre>
+<p>Each block performs:</p>
+<pre class="diagram">Mix information
+      ↓
+Transform information
+      ↓
+Preserve + update state</pre>
+<p>Therefore:</p>
+<pre class="diagram">x₀
+ ↓
+x₁
+ ↓
+x₂
+ ↓
+x₃
+ ↓
+...
+ ↓
+xₙ</pre>
+<p>The representations become progressively richer.</p>
+<h3>The Full Architecture Diagram</h3>
+<p>Here is the mental picture I recommend memorizing:</p>
+<pre class="diagram">                         INPUT
+                           │
+                           ▼
+                    Token Embeddings
+                           │
+                           ▼
+                   Positional Signal
+                           │
+                           ▼
+             ┌─────────────────────────┐
+             │    TRANSFORMER BLOCK    │
+             │                         │
+             │   Normalize             │
+             │      ↓                  │
+             │   Attention             │
+             │      ↓                  │
+             │   Residual Add           │
+             │      ↓                  │
+             │   Normalize              │
+             │      ↓                  │
+             │   MLP                    │
+             │      ↓                  │
+             │   Residual Add           │
+             └────────────┬────────────┘
+                          │
+                          ▼
+                  Repeat N times
+                          │
+                          ▼
+                      Normalize
+                          │
+                          ▼
+                        Logits
+                          │
+                          ▼
+                      Prediction</pre>
+<p>This captures the source's architecture and interview pipeline.</p>
+<h3>Why the Transformer Is Called a "Stack"</h3>
+<p>Because the block repeats.</p>
+<pre class="diagram">┌──────────────┐
+│   Block N    │
+├──────────────┤
+│   Block 3    │
+├──────────────┤
+│   Block 2    │
+├──────────────┤
+│   Block 1    │
+└──────────────┘</pre>
+<p>The same basic architecture is repeated many times.</p>
+<p>This modularity is one reason Transformer blocks are useful as a unit for systems optimization.</p>
+<p>The source notes that practitioners treat the block as a modular unit whose compute, activation, and KV state can be optimized independently.</p>
+<h3>What Happens to a Token Through the Stack?</h3>
+<p>Take one token:</p>
+<pre class="diagram">"bank"</pre>
+<p>At the input:</p>
+<pre class="diagram">bank</pre>
+<p>After Block 1:</p>
+<pre class="diagram">bank + some context</pre>
+<p>After Block 2:</p>
+<pre class="diagram">bank + richer context</pre>
+<p>After Block 3:</p>
+<pre class="diagram">bank + more refined context</pre>
+<p>After many blocks:</p>
+<pre class="diagram">bank + deep contextual representation</pre>
+<p>So:</p>
+<pre class="diagram">Token embedding
+      ↓
+Partially contextualized
+      ↓
+More contextualized
+      ↓
+Deep contextual representation</pre>
+<p>This is what the source means by representations becoming progressively contextualized.</p>
+<h3>The Core Equation</h3>
+<p>The source gives:</p>
+<div class="formula">xₗ₊₁ = xₗ + Attn(Norm(xₗ))<br/>xₗ₊₂ = xₗ₊₁ + MLP(Norm(xₗ₊₁))</div>
+<p>Don't try to memorize it blindly.</p>
+<p>Understand it as:</p>
+<pre class="diagram">Start with x
+
+     ↓
+
+Normalize x
+
+     ↓
+
+Attention(x)
+
+     ↓
+
+Add original x
+
+     ↓
+
+New state
+
+     ↓
+
+Normalize new state
+
+     ↓
+
+MLP(new state)
+
+     ↓
+
+Add previous state
+
+     ↓
+
+Final state</pre>
+<p>That is the equation in plain English.</p>
+<h3>The Transformer Block as "Two Updates"</h3>
+<p>One useful mental model:</p>
+<pre class="diagram">                STATE
+                  │
+                  ▼
+          ┌───────────────┐
+          │ Attention     │
+          │ "Mix info"    │
+          └───────┬───────┘
+                  │
+                  ▼
+             Add to state
+                  │
+                  ▼
+          ┌───────────────┐
+          │ MLP           │
+          │ "Transform"   │
+          └───────┬───────┘
+                  │
+                  ▼
+             Add to state
+                  │
+                  ▼
+             NEW STATE</pre>
+<p>So every layer is essentially:</p>
+<pre class="diagram">State
+ ↓
+Mix
+ ↓
+Update
+ ↓
+Transform
+ ↓
+Update</pre>
+<h3>Why This Architecture Fits Modern Hardware</h3>
+<p>The source highlights that hardware strongly favors <strong>large parallel matrix operations</strong>.</p>
+<p>Transformers rely heavily on matrix operations:</p>
+<pre class="diagram">Large tensor
+    ×
+Large weight matrix
+    ↓
+Large parallel computation</pre>
+<p>Modern accelerators are designed to do a lot of this work efficiently.</p>
+<p>So the architecture and hardware are well matched.</p>
+</div>
+<div class="chapter-page">
+<div class="page-label">PAGE 2 · PRODUCTION, FAILURE MODES, TRADE-OFFS</div>
+<h2>10. Production Architecture and State</h2>
+<h3>But Then Why Is Communication Important?</h3>
+<p>Because once the model becomes large and distributed, information may need to move between devices.</p>
+<p>Conceptually:</p>
+<pre class="diagram">GPU 1
+  │
+  │ communication
+  ▼
+GPU 2
+  │
+  │ communication
+  ▼
+GPU 3</pre>
+<p>So scaling the model can make communication an important part of the system.</p>
+<p>The source specifically identifies <strong>memory and communication</strong> as practical pressures at scale.</p>
+<h3>Training Scale vs Serving Scale</h3>
+<p>Think about two environments.</p>
+<p><strong>Training</strong></p>
+<pre class="diagram">Huge batch
+     ↓
+Many sequences
+     ↓
+Large parallel computation
+     ↓
+High aggregate throughput</pre>
+<p><strong>Inference / Decoding</strong></p>
+<pre class="diagram">User request
+     ↓
+Generate token
+     ↓
+Generate next token
+     ↓
+Generate next token
+     ↓
+...
+     ↓
+Growing KV state</pre>
+<p>The architecture is related, but the dominant resource can change.</p>
+<p>That is why the source says the dominant cost changes between training and decoding.</p>
+<h3>Why Serving State Matters</h3>
+<p>Imagine a user has a long conversation:</p>
+<pre class="diagram">Token 1
+Token 2
+Token 3
+...
+Token 10,000</pre>
+<p>The serving system may need to retain useful state for efficient attention.</p>
+<p>As that state grows:</p>
+<pre class="diagram">Sequence length ↑
+      ↓
+KV state ↑
+      ↓
+Memory pressure ↑</pre>
+<p>This is why the source emphasizes:</p>
+<div class="status"><strong>Preserve the right state. Cache, persist, shard, or discard intermediate state explicitly. Hidden state growth is a common source of capacity collapse.</strong></div>
+<h3>State Is an Engineering Problem</h3>
+<p>A common mistake is to focus only on computation:</p>
+<pre class="diagram">How many FLOPs?</pre>
+<p>But also ask:</p>
+<pre class="diagram">What state exists?
+
+How large is it?
+
+Who owns it?
+
+Where does it live?
+
+Can it be cached?
+
+Can it be sharded?
+
+Can it be discarded?</pre>
+<p>That is a much more production-oriented way to think about the Transformer.</p>
+<h3>Production Architecture</h3>
+<p>The source gives two broad production paths.</p>
+<pre class="diagram">                 Production
+                    │
+          ┌─────────┴─────────┐
+          ▼                   ▼
+       Offline              Online
+        / Async            / Critical</pre>
+<h3>Offline / Async Path</h3>
+<p>The source gives:</p>
+<pre class="diagram">Data / artifacts
+      ↓
+Version + validate
+      ↓
+Build / train / index
+      ↓
+Evaluate + promote</pre>
+<p>Diagram:</p>
+<pre class="diagram">              OFFLINE / ASYNC
+
+Data / Artifacts
+       │
+       ▼
+Version + Validate
+       │
+       ▼
+Build / Train / Index
+       │
+       ▼
+Evaluate
+       │
+       ▼
+Promote</pre>
+<div class="plain-bridge"><div class="plain-label">Layman story</div>
+<p>Think about preparing a large event.</p>
+<p>You do a lot of work before guests arrive:</p>
+<pre class="diagram">Before event:
+Prepare
+Organize
+Check
+Test
+Approve</pre>
+<p>Then the actual event can happen without repeating all the preparation.</p>
+</div>
+<h3>Online / Critical Path</h3>
+<p>The source gives:</p>
+<pre class="diagram">Request
+    ↓
+Validate / admit
+    ↓
+Transformer Architecture
+    ↓
+Verify / guard
+    ↓
+Response + telemetry</pre>
+<p>Diagram:</p>
+<pre class="diagram">              ONLINE / CRITICAL PATH
+
+Request
+  │
+  ▼
+Validate / Admit
+  │
+  ▼
+Transformer
+  │
+  ▼
+Verify / Guard
+  │
+  ▼
+Response
+  │
+  ▼
+Telemetry</pre>
+<div class="plain-bridge"><div class="plain-label">Layman story</div>
+<p>This is the customer standing at the counter.</p>
+<p>Everything on this path directly affects:</p>
+<div class="case-note"><strong>"How long does the customer wait?"</strong></div>
+</div>
+<h3>Production Starting Point</h3>
+<p>The source says:</p>
+<div class="status">Choose <strong>depth, width, heads and MLP ratio jointly with parallelism</strong>.</div>
+<p>And:</p>
+<div class="status"><strong>Residual streams are the backbone; attention and MLP are transformations.</strong></div>
+<p>This gives a very useful architecture mindset:</p>
+<pre class="diagram">                  Transformer
+                       │
+        ┌──────────────┼──────────────┐
+        ▼              ▼              ▼
+      Depth           Width         Heads
+        │              │              │
+        └──────────────┼──────────────┘
+                       ▼
+                 MLP configuration
+                       │
+                       ▼
+                 Parallelism plan</pre>
+<p>You shouldn't treat each architectural number as completely independent.</p>
+<h3>Production State Management</h3>
+<p>The source gives four operational rules:</p>
+<pre class="diagram">1. Keep durable state behind explicit ownership boundaries.
+2. Make workers independently replaceable.
+3. Version caches and artifacts.
+4. Isolate slow or failure-prone dependencies behind
+   queues, deadlines, and budgets.</pre>
+<p>Let's understand these.</p>
+<p><strong>49.1 Explicit State Ownership</strong></p>
+<p>Bad:</p>
+<pre class="diagram">Everything
+   ↓
+Shared mysterious state</pre>
+<p>Better:</p>
+<pre class="diagram">Service A
+   ↓
+Owns state A
+
+Service B
+   ↓
+Owns state B</pre>
+<p>Why?</p>
+<p>Because then you know:</p>
+<pre class="diagram">Who writes it?
+Who reads it?
+Who can modify it?
+Who can invalidate it?</pre>
+<h3>Independently Replaceable Workers</h3>
+<p>Imagine:</p>
+<pre class="diagram">Worker A
+Worker B
+Worker C</pre>
+<p>You want to replace Worker B without rebuilding the entire system.</p>
+<pre class="diagram">Worker B
+   ↓
+New Worker B</pre>
+<p>while:</p>
+<pre class="diagram">Worker A
+Worker C</pre>
+<p>continue functioning.</p>
+<p>That reduces operational coupling.</p>
+<h3>Version Caches and Artifacts</h3>
+<p>Don't think:</p>
+<pre class="diagram">Cache</pre>
+<p>Think:</p>
+<pre class="diagram">Cache v1
+Cache v2
+Cache v3</pre>
+<p>Likewise:</p>
+<pre class="diagram">Model v1
+Model v2
+
+Artifact v1
+Artifact v2</pre>
+<p>Versioning helps make system behavior easier to reason about and makes rollback possible.</p>
+<h3>Isolate Slow Dependencies</h3>
+<p>Suppose an external dependency becomes slow.</p>
+<p>Naive path:</p>
+<pre class="diagram">Request
+  ↓
+Slow dependency
+  ↓
+Everything waits</pre>
+<p>A more resilient architecture:</p>
+<pre class="diagram">Request
+  ↓
+Queue
+  ↓
+Worker
+  ↓
+Dependency</pre>
+<p>with:</p>
+<pre class="diagram">Deadline
+Budget
+Failure handling</pre>
+<p>The source explicitly recommends this kind of isolation.</p>
+<h2>11. What Usually Goes Wrong?</h2>
+<p>The source identifies three major failure patterns.</p>
+<p><strong>Failure 1 — Quality or Correctness Regresses</strong></p>
+<p>A common mistake is to blame the architecture immediately.</p>
+<p>For example:</p>
+<pre class="diagram">Quality gets worse
+     ↓
+"Transformer architecture is the problem."</pre>
+<p>But the real issue might be:</p>
+<pre class="diagram">Optimizer
+Precision
+Parallelism
+Serving state</pre>
+<p>The source explicitly points to these possibilities.</p>
+<p>So:</p>
+<pre class="diagram">Observed failure
+      ↓
+Inspect mechanism
+      ↓
+Identify actual cause
+      ↓
+Fix cause</pre>
+<p>Don't immediately change the entire architecture.</p>
+<h3>Failure 2 — p99 / Capacity Collapses</h3>
+<p>Suppose average latency looks fine:</p>
+<pre class="diagram">Average = 300 ms</pre>
+<p>But:</p>
+<pre class="diagram">p99 = 7 seconds</pre>
+<p>Possible path:</p>
+<pre class="diagram">Workload increases
+       ↓
+Activation / KV state increases
+       ↓
+Memory pressure
+       ↓
+Communication pressure
+       ↓
+Resource saturation
+       ↓
+Queueing
+       ↓
+p99 explodes</pre>
+<p>The source identifies <strong>activation/KV memory and communication</strong> as the core mechanism to investigate in this failure mode.</p>
+<h3>Failure 3 — Great Offline, Bad Online</h3>
+<p>Suppose your benchmark says:</p>
+<pre class="diagram">Throughput
+   ↑ 20%</pre>
+<p>You might celebrate.</p>
+<p>But production may have:</p>
+<pre class="diagram">Different sequence lengths
+Different concurrency
+Different hardware
+Different request distribution
+Different serving state</pre>
+<p>So:</p>
+<pre class="diagram">Offline distribution
+        ≠
+Production distribution</pre>
+<p>The source recommends comparing production traces with evaluation slices and adding deployment-shaped regressions.</p>
+<h3>Why Architecture Can Get Blamed Unfairly</h3>
+<p>The source's primary failure pressure is important:</p>
+<div class="status">Training instability or inference cost is often blamed on architecture when the real issue is <strong>optimizer, precision, parallelism, or serving state</strong>.</div>
+<p>This gives a useful debugging mindset:</p>
+<pre class="diagram">Failure
+  │
+  ├── Architecture?
+  ├── Optimizer?
+  ├── Precision?
+  ├── Parallelism?
+  └── Serving state?</pre>
+<p>Diagnose before changing the architecture.</p>
+<h2>12. Trade-Offs, Baselines, and Misunderstandings</h2>
+<h3>The Main Transformer Trade-Off</h3>
+<p>At a high level:</p>
+<pre class="diagram">                 Transformer
+                     │
+          ┌──────────┴──────────┐
+          ▼                     ▼
+ Global dependency access    Parallel computation
+          │                     │
+          └──────────┬──────────┘
+                     ▼
+             Modern hardware fit
+                     │
+                     ▼
+              But at scale...
+                     │
+          ┌──────────┴──────────┐
+          ▼                     ▼
+      Memory                  Communication
+          │                     │
+          └──────────┬──────────┘
+                     ▼
+              Serving / scaling cost</pre>
+<p>The source's core argument is that the architectural benefit does not remove system cost; it shifts the pressure toward <strong>activation/KV memory and communication</strong>.</p>
+<h3>Simple vs Production vs Advanced</h3>
+<p>The source compares three approaches:</p>
+<table><thead><tr><th>Approach</th><th>Quality</th><th>Latency</th><th>Memory</th><th>Operational complexity</th></tr></thead><tbody><tr><td><strong>Simple baseline</strong></td><td>Easy to reason about</td><td>Predictable</td><td>Often wasteful</td><td>Low</td></tr><tr><td><strong>Production baseline</strong></td><td>Measured and guarded</td><td>Budgeted</td><td>Managed explicitly</td><td>Medium</td></tr><tr><td><strong>Advanced optimization</strong></td><td>Potentially higher</td><td>Can improve materially</td><td>Specialized</td><td>High</td></tr></tbody></table>
+<p>The important lesson:</p>
+<pre class="diagram">Start simple
+    ↓
+Measure
+    ↓
+Find bottleneck
+    ↓
+Optimize</pre>
+<p>Not:</p>
+<pre class="diagram">Use the most advanced optimization immediately</pre>
+<h3>When Should You Use the Simple Approach?</h3>
+<p>The source says:</p>
+<div class="case-note">Use the simpler approach when you need a correctness reference and the resource budget is loose.</div>
+<p>Simple mental model:</p>
+<pre class="diagram">Need correctness reference?
+        +
+Resources are sufficient?
+        ↓
+Start simple</pre>
+<h3>When Should You Use a Production Baseline?</h3>
+<p>When the workload is sufficiently stable to justify:</p>
+<pre class="diagram">Observability
+Versioning
+Failure isolation</pre>
+<p>Think:</p>
+<pre class="diagram">Stable workload
+      ↓
+Measure carefully
+      ↓
+Add guards
+      ↓
+Production baseline</pre>
+<h3>When Should You Use Advanced Optimization?</h3>
+<p>Only when a <strong>measured bottleneck</strong> justifies the extra complexity.</p>
+<pre class="diagram">Measured bottleneck
+        ↓
+Understand mechanism
+        ↓
+Optimization addresses bottleneck
+        ↓
+Extra complexity justified</pre>
+<p>Not:</p>
+<pre class="diagram">"This optimization is popular."
+        ↓
+"Let's use it."</pre>
+<p>The source explicitly warns against premature optimization when the dominant resource is unknown.</p>
+<h3>Common Misunderstanding #1</h3>
+<p><strong>Misconception:</strong> <strong>"More resources automatically make the Transformer better."</strong></p>
+<p><strong>Reality</strong></p>
+<p>The Transformer remains constrained by:</p>
+<pre class="diagram">Signal quality
+System bottlenecks
+Memory
+Context
+Data</pre>
+<p>More compute, context, parameters, or data can have diminishing or negative operational returns.</p>
+<p><strong>Why people believe it</strong></p>
+<p>Benchmark averages can hide:</p>
+<pre class="diagram">Tail failures
+Distribution shifts
+Resource saturation</pre>
+<h3>Common Misunderstanding #2</h3>
+<p><strong>Misconception:</strong> <strong>"The Big-O complexity tells me the production bottleneck."</strong></p>
+<p><strong>Reality</strong></p>
+<p>Production performance also depends on:</p>
+<pre class="diagram">Hardware
+Memory movement
+Synchronization
+Queueing
+Execution topology</pre>
+<p>The source explicitly emphasizes this.</p>
+<p>So:</p>
+<pre class="diagram">Theoretical complexity
+        ≠
+Actual production bottleneck</pre>
+<h3>Common Misunderstanding #3</h3>
+<p><strong>Misconception:</strong> <strong>"A Transformer prototype is automatically a production architecture."</strong></p>
+<p><strong>Reality</strong></p>
+<p>Production also needs:</p>
+<pre class="diagram">Versioning
+Observability
+Isolation
+Rollback
+Evaluation
+State ownership</pre>
+<p>Prototype:</p>
+<pre class="diagram">"Does the architecture work?"</pre>
+<p>Production:</p>
+<pre class="diagram">"Does it work reliably under real load and failure?"</pre>
+<h2>13. Where the Transformer Starts to Hurt</h2>
+<h3>Where Does the Transformer Start to Hurt?</h3>
+<p>The source gives a very important warning:</p>
+<div class="status">The system can appear scalable because the visible metric improves, while the real bottleneck becomes <strong>activation/KV memory and communication at scale</strong>.</div>
+<p>Visualize:</p>
+<pre class="diagram">Workload grows
+      │
+      ▼
+Sequence / concurrency / model scale grows
+      │
+      ▼
+Activation / KV state grows
+      │
+      ▼
+Memory + communication pressure
+      │
+      ▼
+Resource saturation
+      │
+      ▼
+Capacity / latency problems</pre>
+<p>This is where capacity planning becomes important.</p>
+<h3>The Practical Scaling Question</h3>
+<p>Don't ask only:</p>
+<div class="case-note">"How big is the model?"</div>
+<p>Ask:</p>
+<pre class="diagram">At what:
+
+input size?
+sequence length?
+concurrency?
+model size?
+workload shape?
+
+does memory or communication
+become the first saturated resource?</pre>
+<p>The source explicitly says this threshold is more actionable than a single complexity label.</p>
+<h3>Latency Is a System Property</h3>
+<p>The source gives:</p>
+<pre class="diagram">T_request
+=
+T_queue
++
+T_compute
++
+T_memory
++
+T_network
++
+T_validation</pre>
+<p>So a Transformer request can be visualized as:</p>
+<pre class="diagram">Request
+  │
+  ▼
+Queue
+  │
+  ▼
+Compute
+  │
+  ▼
+Memory
+  │
+  ▼
+Network
+  │
+  ▼
+Validation
+  │
+  ▼
+Response</pre>
+<p>A model-level optimization might improve only:</p>
+<pre class="diagram">T_compute</pre>
+<p>while the overall request stays slow because:</p>
+<pre class="diagram">T_memory</pre>
+<p>or:</p>
+<pre class="diagram">T_network</pre>
+<p>dominates.</p>
+<h3>The Right Engineering Question</h3>
+<p>Instead of:</p>
+<div class="case-note">"Is my Transformer fast?"</div>
+<p>ask:</p>
+<div class="status"><strong>"Which component of the request path is currently limiting the system?"</strong></div>
+<p>Possible answers:</p>
+<pre class="diagram">Compute
+Memory
+Network
+Queueing
+Synchronization
+Serving state</pre>
+<p>This is the production mindset.</p>
+<h2>14. Research Background and Evidence</h2>
+<h3>Research Background — Attention Is All You Need</h3>
+<p>The source identifies:</p>
+<div class="case-note"><strong>Attention Is All You Need — Vaswani et al., 2017</strong></div>
+<p>as the foundational Transformer paper.</p>
+<p>Its contribution is described as defining:</p>
+<pre class="diagram">Residual
++
+Attention
++
+MLP
++
+Parallel sequence processing</pre>
+<p>as the backbone that became standard for modern language models.</p>
+<h3>How Practitioners Use the Transformer Block</h3>
+<p>The source emphasizes the Transformer block as a <strong>modular unit</strong>.</p>
+<p>Conceptually:</p>
+<pre class="diagram">Transformer Block
+       │
+       ├── Compute
+       ├── Activation memory
+       └── KV state</pre>
+<p>Because these are relatively distinct concerns, production systems can optimize different parts independently.</p>
+<p>That modularity is an important engineering advantage.</p>
+<h3>Research Background — Layer Normalization Placement</h3>
+<p>The source also cites:</p>
+<div class="case-note"><strong>On Layer Normalization in the Transformer Architecture — Xiong et al., 2020</strong></div>
+<p>The important point given in the source is:</p>
+<pre class="diagram">Normalization placement
+        ↓
+Optimization / training stability</pre>
+<p>and that <strong>pre-norm variants are commonly preferred for deep training stability</strong>.</p>
+<p>So the architectural sequence:</p>
+<pre class="diagram">Normalize
+   ↓
+Attention</pre>
+<p>and:</p>
+<pre class="diagram">Normalize
+   ↓
+MLP</pre>
+<p>is not a random stylistic choice.</p>
+<p>It is connected to training stability.</p>
+<h3>Research Results Are Conditional</h3>
+<p>When reading Transformer papers, never assume:</p>
+<pre class="diagram">Paper result
+    ↓
+Universal truth</pre>
+<p>Instead ask:</p>
+<pre class="diagram">Which model?
+
+Which dataset?
+
+Which scale?
+
+Which metric?
+
+Which hardware?</pre>
+<p>The source explicitly recommends reproducing the evaluation slice before promoting a benchmark trend into a design rule.</p>
+<h3>Three Types of Evidence</h3>
+<p>Use this framework:</p>
+<table><thead><tr><th>Evidence</th><th>Ask</th><th>Why</th></tr></thead><tbody><tr><td><strong>Proven / theoretical</strong></td><td>What follows from the formulation?</td><td>Separates guarantees from empirical claims</td></tr><tr><td><strong>Empirical finding</strong></td><td>Where was it measured?</td><td>Prevents over-generalization</td></tr><tr><td><strong>Engineering rule of thumb</strong></td><td>Under what workload/hardware assumptions is it useful?</td><td>Makes advice operational</td></tr></tbody></table>
+<p>So when you hear:</p>
+<div class="case-note">"Pre-norm is better."</div>
+<p>Ask:</p>
+<pre class="diagram">Better in what sense?
+
+Training stability?
+Convergence?
+Very deep models?
+Specific workloads?</pre>
+<p>The context matters.</p>
+<h3>Research → Production Flow</h3>
+<p>The source recommends:</p>
+<pre class="diagram">Claim
+  ↓
+Assumption
+  ↓
+Measurement
+  ↓
+Failure boundary
+  ↓
+Rollback criterion</pre>
+<p>Example:</p>
+<pre class="diagram">Claim:
+"This kernel makes inference faster."
+
+        ↓
+
+Assumption:
+"Production workload resembles benchmark workload."
+
+        ↓
+
+Measurement:
+"Measure p50 / p95 / p99 and memory."
+
+        ↓
+
+Failure boundary:
+"Long-context requests lose their advantage."
+
+        ↓
+
+Rollback:
+"Revert when SLO is violated."</pre>
+</div>
+
+<section class="production-case" data-case-study="t2">
+<h2>Production Case Study — Fused / Hardware-Aware Transformer Execution</h2>
+<div class="case-meta"><span class="case-pill">System: Transformer + fused-kernel production stacks</span><span class="case-pill">Evidence: public paper / documented system</span><span class="case-pill">Scope: architecture + production inference</span></div>
+<p>The source gives this production case study:</p>
+<div class="case-note"><strong>Transformer + fused-kernel production stacks</strong></div>
+<p>The main observation:</p>
+<div class="case-note">The architectural abstraction is simple, but production cost moves into <strong>memory movement, kernels, and distributed execution</strong>.</div>
+<h3>What Is a Fused Kernel?</h3>
+<p>Suppose you have:</p>
+<pre class="diagram">Operation A
+   ↓
+Operation B
+   ↓
+Operation C</pre>
+<p>A naive implementation may execute them as separate operations.</p>
+<p>Conceptually:</p>
+<pre class="diagram">A → memory → B → memory → C</pre>
+<p>A fused implementation tries to combine work:</p>
+<pre class="diagram">A + B + C
+      ↓
+one optimized execution path</pre>
+<p>The goal is to reduce things such as:</p>
+<pre class="diagram">Kernel launches
+Intermediate materialization
+Unnecessary memory movement</pre>
+<p>The source summarizes the principle as:</p>
+<pre class="diagram">same math
+    ↓
+fewer launches / materializations
+    ↓
+better hardware utilization</pre>
+<div class="plain-bridge"><div class="plain-label">Layman Story: Assembly Line</div>
+<p>Imagine a factory.</p>
+<p>Naive:</p>
+<pre class="diagram">Machine 1
+   ↓
+Move product
+   ↓
+Machine 2
+   ↓
+Move product
+   ↓
+Machine 3</pre>
+<p>There is a lot of movement between machines.</p>
+<p>A more optimized line:</p>
+<pre class="diagram">Machine 1 + Machine 2 + Machine 3
+          ↓
+Process with less movement</pre>
+<p>The mathematical output may be the same.</p>
+<p>The execution can be much more efficient.</p>
+</div>
+<h3>Algorithmic Architecture vs Execution Architecture</h3>
+<p>This is one of the best engineering lessons in the chapter.</p>
+<pre class="diagram">Algorithmic architecture
+        │
+        ▼
+"What computation do we want?"
+
+        ↓
+
+Execution architecture
+        │
+        ▼
+"How should hardware actually execute it?"</pre>
+<p>The source's generalizable lesson is:</p>
+<div class="case-note"><strong>Separate algorithmic architecture from execution architecture.</strong></div>
+<p>This distinction is extremely important in AI systems engineering.</p>
+<h3>Same Mathematics, Different Runtime</h3>
+<p>Imagine:</p>
+<pre class="diagram">Model definition
+    ↓
+Attention + MLP</pre>
+<p>You could execute that with:</p>
+<pre class="diagram">Generic operators</pre>
+<p>or:</p>
+<pre class="diagram">Fused kernels
+Hardware-aware scheduling
+Optimized memory layout
+Distributed execution</pre>
+<p>The logical architecture can stay conceptually the same while the execution architecture changes dramatically.</p>
+<h3>The Production Optimization Loop</h3>
+<p>Think:</p>
+<pre class="diagram">Architecture
+     ↓
+Real workload
+     ↓
+Profile
+     ↓
+Find saturated resource
+     ↓
+Change execution strategy
+     ↓
+Measure again</pre>
+<p>Not:</p>
+<pre class="diagram">Read optimization paper
+      ↓
+Copy optimization
+      ↓
+Hope</pre>
+<p class="source-links"><a href="https://arxiv.org/abs/1706.03762" rel="noopener" target="_blank">Primary/public source ↗</a></p>
+</section>
+<section class="audit" data-editorial-pass="4"><h2>Engineer’s checklist: what to test before you trust this</h2>
+<p><span class="badge">Iteration 1 · AI Engineer</span><span class="badge">Iteration 2 · AI Researcher</span><span class="badge">Iteration 3 · Staff AI Engineer</span><span class="badge">Iteration 4 · First-principles teaching pass</span></p>
+<div class="agent-ai">
+<h3>Engineer's Test #1 — AI Engineer</h3>
+<p>The source asks:</p>
+<div class="case-note">Can an engineer implement Transformer Architecture without guessing hidden state, data contracts, or runtime behavior?</div>
+<p>You should know:</p>
+<pre class="diagram">Input
+  ↓
+Embedding
+  ↓
+Position
+  ↓
+Normalize
+  ↓
+Attention
+  ↓
+Residual
+  ↓
+Normalize
+  ↓
+MLP
+  ↓
+Residual
+  ↓
+Repeat
+  ↓
+Output / logits</pre>
+<p>Also identify:</p>
+<pre class="diagram">Minimum observable inputs
+Minimum observable outputs
+Dominant runtime resource
+One invariant
+One regression signal</pre>
+<p><strong>AI Engineer Invariant</strong></p>
+<p>An invariant is something that should remain true.</p>
+<p>For example, conceptually:</p>
+<pre class="diagram">Residual stream shape
+      ↓
+Should remain compatible
+across the block</pre>
+<p>The exact invariant you choose depends on the implementation.</p>
+<p>The source specifically recommends defining <strong>one invariant and one measurable regression signal</strong>.</p>
+</div>
+<div class="agent-research">
+<h3>Engineer's Test #2 — AI Researcher</h3>
+<p>The key question:</p>
+<div class="case-note"><strong>Can I separate the mechanism from the evidence?</strong></div>
+<p>Ask:</p>
+<pre class="diagram">What baseline was used?
+
+What assumption matters?
+
+What would invalidate the conclusion?
+
+Does the result survive:
+
+different scale?
+different data?
+different metric?</pre>
+<p>This is how you avoid treating one benchmark as universal truth.</p>
+</div>
+<div class="agent-staff">
+<h3>Engineer's Test #3 — Staff AI Engineer</h3>
+<p>Now ask:</p>
+<div class="case-note"><strong>Can this architecture survive production load and organizational complexity?</strong></div>
+<p>Focus on:</p>
+<pre class="diagram">Numerical stability
+Tensor shapes
+Kernels
+Asymptotic cost
+Hardware cost</pre>
+<p>And also:</p>
+<pre class="diagram">Ownership
+Degradation behavior
+Rollback
+Observability</pre>
+<p><strong>Staff-Level Questions</strong></p>
+<p>A staff engineer should be thinking:</p>
+<pre class="diagram">Where is the stateful failure boundary?
+
+What degrades first at p99?
+
+What happens under overload?
+
+What can be changed independently?
+
+Will changing this invalidate cached state?
+
+Can I roll this back safely?</pre>
+<p>This is where architecture turns into systems engineering.</p>
+</div>
+<div class="agent-first">
+<h3>Engineer's Test #4 — First Principles</h3>
+<p>Reduce the entire topic to:</p>
+<pre class="diagram">Required capability
+        ↓
+Binding constraint
+        ↓
+Changed computation
+        ↓
+New resource cost
+        ↓
+New failure mode</pre>
+<p>For Transformer:</p>
+<pre class="diagram">Need:
+Global dependency access
++
+Parallel-friendly sequence modeling
+
+        ↓
+
+Change:
+Attention + MLP residual stack
+
+        ↓
+
+Benefit:
+Contextualized token representations
++
+Parallel matrix-friendly computation
+
+        ↓
+
+New cost:
+Activation / KV memory
++
+Communication
+
+        ↓
+
+Failure:
+Memory pressure
++
+p99 / capacity degradation
++
+distributed execution issues</pre>
+</div>
+</section>
+<div class="chapter-page">
+<div class="page-label">PAGE 3 · SYNTHESIS, INTERVIEW REASONING, REMEMBER</div>
+<h2>15. The Binding Constraint</h2>
+<h3>The Binding Constraint Principle</h3>
+<p>This is the deepest lesson.</p>
+<div class="status"><strong>Progress often comes from changing the binding constraint.</strong></div>
+<p>Suppose:</p>
+<pre class="diagram">Compute       → 60%
+Memory        → 95%
+Network       → 40%
+CPU           → 30%</pre>
+<p>What should you optimize first?</p>
+<p>Probably not CPU.</p>
+<p>The memory system is much closer to saturation.</p>
+<p>So:</p>
+<pre class="diagram">Find bottleneck
+      ↓
+Optimize bottleneck
+      ↓
+Measure again
+      ↓
+Find new bottleneck</pre>
+<p>This principle applies to:</p>
+<pre class="diagram">Model architecture
+GPU kernels
+Distributed systems
+Databases
+APIs
+Serving infrastructure</pre>
+<h3>Why "More Compute" May Not Help</h3>
+<p>Suppose you increase GPU compute capacity.</p>
+<p>But your workload is limited by:</p>
+<pre class="diagram">Memory bandwidth</pre>
+<p>Then:</p>
+<pre class="diagram">More compute
+     ↓
+Very little practical improvement</pre>
+<p>because the GPU cannot get data to the compute units quickly enough.</p>
+<p>This is why the source repeatedly says to identify the saturated resource rather than optimizing the architecture in isolation.</p>
+<h3>One Very Important Production Question</h3>
+<p>Ask:</p>
+<div class="case-note"><strong>Where does the state live?</strong></div>
+<p>For a Transformer system, state can include:</p>
+<pre class="diagram">Activations
+KV cache
+Model weights
+Artifacts
+Caches
+Intermediate state</pre>
+<p>Then ask:</p>
+<pre class="diagram">How large is it?
+Who owns it?
+Where is it stored?
+Can it be sharded?
+Can it be discarded?
+Can it be recovered?</pre>
+<p>The source emphasizes explicit preservation and ownership of state.</p>
+<h3>One Very Important Architecture Question</h3>
+<p>Ask:</p>
+<div class="case-note"><strong>What is the residual stream doing?</strong></div>
+<p>Answer:</p>
+<pre class="diagram">It carries the evolving representation
+through the stack.</pre>
+<p>Attention and MLP contribute transformations:</p>
+<pre class="diagram">Residual stream
+      │
+      ├──► Attention adds information
+      │
+      ├──► MLP adds transformation
+      │
+      ├──► Attention adds more information
+      │
+      └──► MLP adds more transformation</pre>
+<p>The source calls the residual stream the architectural backbone.</p>
+<h2>16. Mental Models and the Full Causal Story</h2>
+<h3>Transformer vs Attention</h3>
+<p>This is a common interview confusion.</p>
+<p><strong>Attention</strong></p>
+<p>Attention is the <strong>information-mixing mechanism</strong>.</p>
+<pre class="diagram">Token A
+Token B
+Token C
+   │
+   ▼
+Attention
+   │
+   ▼
+Mixed information</pre>
+<p><strong>Transformer</strong></p>
+<p>Transformer is the <strong>larger architecture</strong> built around repeated blocks containing:</p>
+<pre class="diagram">Attention
++
+MLP
++
+Normalization
++
+Residual paths</pre>
+<p>So:</p>
+<pre class="diagram">Attention
+   ⊂
+Transformer Block
+   ⊂
+Transformer Architecture</pre>
+<p>That distinction is important.</p>
+<h3>Transformer vs Transformer Block</h3>
+<p>Another common confusion.</p>
+<p><strong>Transformer Block</strong></p>
+<p>One repeated unit:</p>
+<pre class="diagram">Norm
+ ↓
+Attention
+ ↓
+Residual
+ ↓
+Norm
+ ↓
+MLP
+ ↓
+Residual</pre>
+<p><strong>Transformer Architecture</strong></p>
+<p>Many blocks stacked together:</p>
+<pre class="diagram">Block 1
+  ↓
+Block 2
+  ↓
+Block 3
+  ↓
+...
+Block N</pre>
+<h3>Beginner Mental Model</h3>
+<p>Think of a Transformer as a school class.</p>
+<p>Each layer is another round of discussion.</p>
+<pre class="diagram">Round 1:
+Students share information.
+
+Round 2:
+Students rethink what they learned.
+
+Round 3:
+More information gets shared.
+
+Round 4:
+Students refine their understanding.</pre>
+<p>At the end:</p>
+<pre class="diagram">Every student's representation
+contains much richer context.</pre>
+<p>That's the Transformer stack.</p>
+<h3>Engineer Mental Model</h3>
+<p>A senior engineer should think:</p>
+<pre class="diagram">              Transformer
+
+       Residual state stream
+                  │
+         ┌────────┴────────┐
+         ▼                 ▼
+      Attention           MLP
+         │                 │
+         └────────┬────────┘
+                  ▼
+            Repeated layers
+                  │
+                  ▼
+       Activation / KV state
+                  │
+                  ▼
+       Memory + communication
+                  │
+                  ▼
+       Hardware / distributed
+           execution
+                  │
+                  ▼
+         p95 / p99 / SLO</pre>
+<p>The algorithm is only the beginning.</p>
+<h3>Research-to-Production Connected Stack</h3>
+<p>The source recommends studying Transformer architecture as part of:</p>
+<pre class="diagram">Architecture
+      ↓
+Training objective
+      ↓
+Optimization
+      ↓
+Inference / runtime
+      ↓
+Distributed systems
+      ↓
+Evaluation
+      ↓
+Safety / reliability</pre>
+<p>The useful question is always:</p>
+<pre class="diagram">Who produces the input?
+
+Who consumes the output?
+
+Which resource becomes scarce?
+
+How are failures detected?</pre>
+<p>This creates a connected mental graph rather than isolated facts.</p>
+<h3>The Core Mental Model</h3>
+<p>The source's core mental model can be expressed as:</p>
+<div class="status"><strong>A Transformer is an explicit transformation of information and resource allocation: identify what must be preserved, what can be approximated or recomputed, and where state must live.</strong></div>
+<p>Diagram:</p>
+<pre class="diagram">                 Transformer
+                      │
+        ┌─────────────┼─────────────┐
+        ▼             ▼             ▼
+   Information      State        Resources
+        │             │             │
+        ▼             ▼             ▼
+    Attention      KV / cache    Compute
+       +           Activations    Memory
+      MLP                         Network
+        │             │             │
+        └─────────────┼─────────────┘
+                      ▼
+                 System behavior</pre>
+<h3>The Production Insight</h3>
+<p>The source makes an important distinction:</p>
+<div class="status">At scale, the mechanism itself is only one component. <strong>Tail latency, state growth, versioning, observability, and failure isolation</strong> determine whether the theoretical benefit survives real workloads.</div>
+<p>So don't think:</p>
+<pre class="diagram">Good architecture
+      =
+Good production system</pre>
+<p>Instead:</p>
+<pre class="diagram">Good architecture
+       +
+Good execution
+       +
+Good state management
+       +
+Good observability
+       +
+Good failure handling
+       ↓
+Good production system</pre>
+<h3>Staff+ / Research Insight</h3>
+<p>The deeper principle is:</p>
+<div class="status"><strong>Progress often comes from changing the binding constraint.</strong></div>
+<p>A strong engineer connects:</p>
+<pre class="diagram">Model behavior
+      +
+Statistical assumptions
+      +
+Hardware resources
+      +
+Workload
+      +
+Operational feedback</pre>
+<p>into:</p>
+<pre class="diagram">ONE causal model</pre>
+<p>rather than optimizing isolated metrics.</p>
+<h3>The Full Causal Story</h3>
+<p>Now connect the entire Transformer chapter:</p>
+<pre class="diagram">Need global dependencies
+          │
+          ▼
+Need parallel-friendly computation
+          │
+          ▼
+Transformer architecture
+          │
+          ├── Attention → mix token information
+          │
+          ├── MLP       → transform features
+          │
+          ├── Residual  → preserve/update state
+          │
+          └── Norm      → stabilize transformations
+          │
+          ▼
+Repeat many blocks
+          │
+          ▼
+Progressively contextualized representations
+          │
+          ▼
+Strong capability
+          │
+          ▼
+But at scale...
+          │
+          ├── Activation memory
+          ├── KV memory
+          └── Communication
+          │
+          ▼
+Resource saturation
+          │
+          ▼
+Latency / capacity problems
+          │
+          ▼
+Optimize execution architecture
+          │
+          ▼
+Profile → optimize → measure</pre>
+<p>That's the whole story.</p>
+<h3>The One Diagram to Memorize for Interviews</h3>
+<pre class="diagram">                           INPUT
+                             │
+                             ▼
+                      TOKEN EMBEDDINGS
+                             │
+                             ▼
+                     POSITIONAL SIGNAL
+                             │
+                             ▼
+                ┌─────────────────────────┐
+                │   TRANSFORMER BLOCK     │
+                │                         │
+                │    Normalize            │
+                │       ↓                 │
+                │    Attention            │
+                │       ↓                 │
+                │    Residual Add          │
+                │       ↓                 │
+                │    Normalize             │
+                │       ↓                 │
+                │       MLP               │
+                │       ↓                 │
+                │    Residual Add          │
+                └───────────┬─────────────┘
+                            │
+                            ▼
+                       REPEAT N TIMES
+                            │
+                            ▼
+                         NORMALIZE
+                            │
+                            ▼
+                           LOGITS
+                            │
+                            ▼
+                         OUTPUT</pre>
+<p>And remember:</p>
+<pre class="diagram">Attention = MIX INFORMATION
+
+MLP = TRANSFORM FEATURES
+
+Residual = PRESERVE + UPDATE
+
+Norm = STABILIZE
+
+Stack = REPEAT</pre>
+<h2>17. Interview Answers</h2>
+<h3>Interview Answer — 30 to 45 Seconds</h3>
+<p>A strong explanation is:</p>
+<div class="case-note"><strong>A Transformer is a residual stack of attention and feed-forward blocks. The input tokens are embedded and given positional information, then passed through repeated pre-normalized blocks. In each block, attention mixes information across tokens, while the MLP applies a nonlinear transformation to each token's features. Residual connections preserve the existing representation while adding the new transformation. The main advantage is global dependency access with highly parallelizable matrix operations. At production scale, however, the limiting resource can shift toward activation/KV memory and communication, so I would measure the actual p95/p99 and saturated resource rather than judging the architecture only from theoretical complexity.</strong></div>
+<p>This matches the original chapter's interview framing.</p>
+<h3>Interview Follow-Up — "What Is the Main Advantage?"</h3>
+<p>Answer:</p>
+<div class="case-note"><strong>Global dependency access without recurrence, combined with computation that maps well to large parallel matrix operations.</strong></div>
+<h3>Interview Follow-Up — "What Is the Main Cost?"</h3>
+<p>Answer:</p>
+<div class="case-note"><strong>At scale, activation/KV memory and communication can become dominant resources, especially depending on workload shape, model scale, and decoding behavior.</strong></div>
+<h3>Interview Follow-Up — "Why Residual Connections?"</h3>
+<p>Simple answer:</p>
+<div class="case-note">They allow the model to preserve the previous representation while adding information from the current transformation.</div>
+<p>Diagram:</p>
+<pre class="diagram">Input ────────────────┐
+  │                   │
+  ▼                   │
+Transformation ───────┤
+                      ▼
+                    Add
+                      │
+                      ▼
+                    Output</pre>
+<p>The architecture uses residual paths throughout the block.</p>
+<h3>Interview Follow-Up — "Why Pre-Norm?"</h3>
+<p>Answer:</p>
+<div class="case-note">Pre-norm places normalization before attention and MLP transformations. The cited research analyzes normalization placement and optimization stability, with pre-norm variants commonly preferred for deep training stability.</div>
+<h3>Interview Follow-Up — "Why Isn't More GPU Compute Always Better?"</h3>
+<p>Answer:</p>
+<div class="case-note">Because compute may not be the binding constraint. Memory movement, activation/KV state, communication, synchronization, or queueing may saturate first.</div>
+<h3>Interview Follow-Up — "Why Can an Optimization Fail in Production?"</h3>
+<p>Answer:</p>
+<div class="case-note">Because the benchmark may not match the deployment distribution. I would compare production traces with evaluation slices and verify p95/p99, resource saturation, and quality under the real workload.</div>
+<h3>Interview Follow-Up — "What Is a Simple Production Baseline?"</h3>
+<p>Start with:</p>
+<pre class="diagram">Versioning
+Evaluation
+Observability
+Bounded state
+Rollback
+Failure isolation</pre>
+<p>Then optimize once a real bottleneck has been identified.</p>
+<p>The source explicitly recommends this sequence.</p>
+<h3>Interview Follow-Up — "What Alternative Would You Choose?"</h3>
+<p>Don't say:</p>
+<div class="case-note">"This architecture is always better."</div>
+<p>Instead compare based on:</p>
+<pre class="diagram">Workload shape
+Hardware topology
+Quality target
+Operational maturity</pre>
+<h2>18. Stories, Summary, and What to Remember</h2>
+<div class="plain-bridge"><div class="plain-label">One Final Beginner Story</div>
+<p>Imagine a group of students solving a very difficult puzzle.</p>
+<p>At the beginning:</p>
+<pre class="diagram">Student A → knows clue A
+Student B → knows clue B
+Student C → knows clue C
+Student D → knows clue D</pre>
+<p><strong>Step 1 — Attention</strong></p>
+<p>Students talk to each other:</p>
+<pre class="diagram">A ─────┐
+B ─────┼──► Share useful clues
+C ─────┤
+D ─────┘</pre>
+<p><strong>Step 2 — MLP</strong></p>
+<p>Each student thinks about the clues they received:</p>
+<pre class="diagram">What I knew
+    +
+What I learned
+    ↓
+My new understanding</pre>
+<p><strong>Step 3 — Residual</strong></p>
+<p>They keep their old notes and add the new understanding:</p>
+<pre class="diagram">Old notes
+    +
+New information
+    ↓
+Updated notes</pre>
+<p><strong>Step 4 — Repeat</strong></p>
+<pre class="diagram">Round 1
+   ↓
+Round 2
+   ↓
+Round 3
+   ↓
+Round 4
+   ↓
+...</pre>
+<p>After many rounds, every student's understanding becomes much richer.</p>
+<p>That is essentially what a Transformer does.</p>
+</div>
+<h3>One Final Engineer Story</h3>
+<p>Now imagine the students are replaced by GPUs.</p>
+<pre class="diagram">Tokens
+  ↓
+Attention
+  ↓
+MLP
+  ↓
+Residual state
+  ↓
+Repeat</pre>
+<p>At small scale:</p>
+<pre class="diagram">Everything works comfortably</pre>
+<p>At large scale:</p>
+<pre class="diagram">Huge activations
++
+Large KV state
++
+Distributed communication
+        ↓
+Memory / communication pressure
+        ↓
+Capacity / latency problems</pre>
+<p>So now you ask:</p>
+<pre class="diagram">Where is the bottleneck?</pre>
+<p>Maybe:</p>
+<pre class="diagram">Compute?
+Memory?
+Bandwidth?
+Communication?
+Queueing?</pre>
+<p>Then:</p>
+<pre class="diagram">Measure
+  ↓
+Find bottleneck
+  ↓
+Optimize execution
+  ↓
+Measure again</pre>
+<p>That is the <strong>senior engineer view</strong> of the Transformer.</p>
+<h3>The Complete Mental Model</h3>
+<p>You can compress the whole chapter into this:</p>
+<pre class="diagram">                    TRANSFORMER
+
+                 INPUT TOKENS
+                       │
+                       ▼
+                Embeddings + Position
+                       │
+                       ▼
+              ┌───────────────────┐
+              │ Transformer Block │
+              │                   │
+              │ Normalize         │
+              │    ↓              │
+              │ Attention         │
+              │    ↓              │
+              │ Residual          │
+              │    ↓              │
+              │ Normalize         │
+              │    ↓              │
+              │ MLP               │
+              │    ↓              │
+              │ Residual          │
+              └────────┬──────────┘
+                       │
+                       ▼
+                  Repeat many times
+                       │
+                       ▼
+              Contextualized state
+                       │
+                       ▼
+                    Logits
+                       │
+                       ▼
+                   Prediction</pre>
+<p>And underneath it:</p>
+<pre class="diagram">             PRODUCTION REALITY
+
+Architecture
+      │
+      ▼
+Execution
+      │
+      ▼
+Memory / KV state
+      │
+      ▼
+Communication
+      │
+      ▼
+Resource saturation
+      │
+      ▼
+Latency / Capacity
+      │
+      ▼
+SLO / Reliability</pre>
+<h3>What You Should Remember</h3>
+<p><strong>Core Idea</strong></p>
+<div class="status"><strong>Transformer = repeated information mixing + feature transformation + residual state updates.</strong></div>
+<p><strong>Attention</strong></p>
+<pre class="diagram">Mix information BETWEEN tokens</pre>
+<p><strong>MLP</strong></p>
+<pre class="diagram">Transform features WITHIN each token</pre>
+<p><strong>Residual</strong></p>
+<pre class="diagram">Keep old information
+        +
+Add new information</pre>
+<p><strong>Normalization</strong></p>
+<pre class="diagram">Normalize
+   ↓
+Transform</pre>
+<p>The source's architecture uses this pre-normalized pattern.</p>
+<p><strong>Stack</strong></p>
+<pre class="diagram">Repeat the block
+many times</pre>
+<p><strong>Main Benefit</strong></p>
+<pre class="diagram">Global dependency access
++
+Parallel-friendly matrix computation</pre>
+<p><strong>Main Production Cost</strong></p>
+<pre class="diagram">Activation memory
++
+KV memory
++
+Communication</pre>
+<p><strong>Main Engineering Lesson</strong></p>
+<pre class="diagram">Don't optimize blindly.
+
+Find the binding constraint.</pre>
+<h3>The One-Line Summary</h3>
+<div class="status"><strong>A Transformer is a stack of residual attention-and-MLP blocks that repeatedly mixes information across tokens and transforms each token's features, producing increasingly contextual representations while shifting large-scale system pressure toward activation/KV memory, communication, and execution efficiency.</strong></div>
+<h3>The Final Mental Picture</h3>
+<p>Think of a Transformer as a <strong>team that keeps having meetings</strong>.</p>
+<pre class="diagram">                 TEAM
+                  │
+                  ▼
+            Share information
+             (Attention)
+                  │
+                  ▼
+          Process what was learned
+                (MLP)
+                  │
+                  ▼
+      Keep old knowledge + add new
+              (Residual)
+                  │
+                  ▼
+             Stabilize flow
+               (Norm)
+                  │
+                  ▼
+              Next meeting
+                  │
+                  ▼
+                  ...
+                  │
+                  ▼
+             Rich context</pre>
+<p>And when the team becomes enormous:</p>
+<pre class="diagram">More people
+    ↓
+More information
+    ↓
+More state
+    ↓
+More communication
+    ↓
+More resource pressure</pre>
+<p>So the real engineering question becomes:</p>
+<div class="case-note"><strong>"How do I preserve the capability while controlling the resource cost?"</strong></div>
+<p>That is the central idea behind the Transformer chapter.</p>
+<h3>Final Cause-and-Effect Chain</h3>
+<p>Memorize this:</p>
+<pre class="diagram">Need global dependencies
+        ↓
+Need parallel computation
+        ↓
+Build Transformer
+        ↓
+Attention mixes token information
+        ↓
+MLP transforms token features
+        ↓
+Residuals preserve and update state
+        ↓
+Repeat across many layers
+        ↓
+Contextualized representations
+        ↓
+Memory / KV / communication cost
+        ↓
+Production bottlenecks
+        ↓
+Measure
+        ↓
+Find binding constraint
+        ↓
+Optimize execution
+        ↓
+Measure again</pre>
+<p>That is the <strong>Transformer Architecture from fresh-grad intuition all the way to Staff AI Engineer thinking</strong>.</p>
+</div>
+<div class="chapter-nav"><a href="attention-mechanism.html">← Previous</a><a href="../index.html">Contents ↑</a><a href="positional-encoding.html">Next →</a></div>
+</section>
+</main>
+</div>
+<footer><a href="../index.html">Contents</a> &middot; <a href="../assets/glossary.html">Glossary</a></footer>
+<script src="../assets/glossary.js"></script>
+</body></html>

@@ -1,0 +1,2364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/><meta content="width=device-width,initial-scale=1" name="viewport"/>
+<title>Tokenization — AI Engineering &amp; Research Deep Dive</title>
+<link rel="stylesheet" href="../assets/style.css"/>
+</head>
+<body id="top">
+<div class="layout single">
+<main>
+<section class="chapter" data-category="Foundations" id="t4">
+<div class="chapter-kicker">Foundations · Chapter 04 / 101</div>
+<h1>Tokenization</h1>
+<p class="lede">A production-and-research treatment for engineers who already know ML, neural networks, and Transformer fundamentals. Each chapter splits into two pages: <strong>mechanism</strong> first, then systems, failure modes, and research reasoning.</p><div class="plain-bridge"><div class="plain-label">In plain English</div><p>Before a language model can work with text, the text has to be broken into <strong>tokens</strong>.</p><p>The way we choose those tokens affects <strong>cost, context length, multilingual behavior, and model behavior</strong>.</p></div>
+<div class="chapter-page">
+<div class="page-label">PAGE 1 · MECHANISM, MENTAL MODEL, THEORY</div>
+<h2>1. The Big Idea</h2>
+<p>A computer model does not directly receive:</p>
+<pre class="diagram">"Hello, how are you?"</pre>
+<p>as a sentence in the way a human sees it.</p>
+<p>It needs a discrete representation.</p>
+<p>So we transform:</p>
+<pre class="diagram">Raw text
+   ↓
+Tokens
+   ↓
+Token IDs
+   ↓
+Model</pre>
+<p>For example, conceptually:</p>
+<pre class="diagram">"Hello, how are you?"
+
+        ↓
+
+["Hello", ",", " how", " are", " you", "?"]
+
+        ↓
+
+[1542, 11, 703, 527, 284, 30]</pre>
+<p>The exact token boundaries and IDs depend on the tokenizer.</p>
+<p>The important idea is:</p>
+<div class="case-note"><strong>Tokenization converts raw text into the discrete units the model actually operates on.</strong></div>
+<p>The source describes tokenization as:</p>
+<div class="case-note"><strong>A lossy interface that maps raw symbol sequences into discrete units whose distribution determines sequence length, vocabulary statistics, and the model interface.</strong></div>
+
+<h2>2. Why Characters Are Not Enough, and the Problem Tokenization Solves</h2>
+<h3>Why Can't We Just Give the Model Characters?</h3>
+<p>A beginner might ask:</p>
+<div class="case-note">"Why don't we simply give the model every character?"</div>
+<p>For example:</p>
+<pre class="diagram">H e l l o   w o r l d</pre>
+<p>This is possible conceptually, but it can create very long sequences.</p>
+<p>Instead of:</p>
+<pre class="diagram">Hello</pre>
+<p>being one unit, you might process:</p>
+<pre class="diagram">H
+
+e
+
+l
+
+l
+
+o</pre>
+<p>Now the sequence becomes longer.</p>
+<p>And sequence length matters.</p>
+<p>The source highlights that compute scales with <strong>token count</strong>.</p>
+<p>So tokenization is not just a formatting step.</p>
+<p>It directly affects how much work the model has to do.</p>
+<h3>The Problem Tokenization Solves</h3>
+<p>The source describes the fundamental problem as:</p>
+<div class="case-note"><strong>Neural models require a discrete interface, but natural language has an open vocabulary and compute scales with token count.</strong></div>
+<p>There are two important problems here.</p>
+<h3>Problem 1 — The vocabulary is huge and open-ended</h3>
+<p>Language contains:</p>
+<pre class="diagram">Normal words
+
+Names
+
+Slang
+
+Numbers
+
+URLs
+
+Code
+
+Typos
+
+New words
+
+Rare words
+
+Different languages</pre>
+<p>You can't realistically assume that every possible word should have its own dedicated token.</p>
+<h3>Problem 2 — More tokens means more sequence work</h3>
+<p>Suppose two tokenizers represent the same sentence as:</p>
+<pre class="diagram">Tokenizer A → 10 tokens
+
+Tokenizer B → 18 tokens</pre>
+<p>The second tokenizer produces a longer sequence.</p>
+<p>That can affect:</p>
+<pre class="diagram">Context usage
+
+Compute
+
+Memory
+
+Latency
+
+Cost</pre>
+<p>This is what the source calls <strong>token inflation</strong>.</p>
+
+<h2>3. The Core Mental Model</h2>
+<p>Think of tokenization as a <strong>translator between human language and the model's language</strong>.</p>
+<pre class="diagram">Human language
+      │
+      ▼
+┌─────────────────┐
+│    Tokenizer    │
+└────────┬────────┘
+         │
+         ▼
+Discrete tokens
+         │
+         ▼
+    Token IDs
+         │
+         ▼
+      Model</pre>
+<p>The model does not directly operate on the original text.</p>
+<p>It operates on the token representation created by the tokenizer.</p>
+<div class="plain-bridge"><div class="plain-label">Layman Story: Lego Blocks</div>
+<p>Imagine you have a sentence.</p>
+<p>You want to build it using Lego.</p>
+<p>You could choose:</p>
+<h3>Very tiny blocks</h3>
+<pre class="diagram">H | e | l | l | o</pre>
+<p>You need many pieces.</p>
+<h3>Very large blocks</h3>
+<pre class="diagram">Hello</pre>
+<p>You need fewer pieces, but now you need many different specialized blocks.</p>
+<h3>Medium-sized blocks</h3>
+<pre class="diagram">Hel | lo</pre>
+<p>or:</p>
+<pre class="diagram">Hello | world</pre>
+<p>The idea of tokenization is similar:</p>
+<div class="case-note"><strong>Choose useful building blocks for language.</strong></div>
+<p>That is why subword units are important.</p></div>
+
+<h2>4. Subword Units</h2>
+<h3>Why Subword Units?</h3>
+<p>Instead of having only:</p>
+<pre class="diagram">whole words</pre>
+<p>or only:</p>
+<pre class="diagram">individual characters</pre>
+<p>we can create reusable pieces of words.</p>
+<p>For example, conceptually:</p>
+<pre class="diagram">"playing"
+   ↓
+"play" + "ing"</pre>
+<p>and:</p>
+<pre class="diagram">"played"
+   ↓
+"play" + "ed"</pre>
+<p>The same pieces can be reused.</p>
+<p>This gives the model a way to represent many different words without requiring a unique token for every possible word.</p>
+<p>The source's design framing is:</p>
+<div class="case-note"><strong>Learn or define subword units, encode text into IDs, then decode IDs back to bytes/text.</strong></div>
+<h3>Why Not Just Use Whole Words?</h3>
+<p>Imagine a vocabulary containing:</p>
+<pre class="diagram">cat
+
+dog
+
+house
+
+computer
+
+...</pre>
+<p>Now someone writes:</p>
+<pre class="diagram">supercalifragilistic...</pre>
+<p>or a rare name:</p>
+<pre class="diagram">Xyzabc123</pre>
+<p>If every word must exist as a complete vocabulary entry, the vocabulary becomes huge.</p>
+<p>Instead, subword tokenization can break unfamiliar text into reusable pieces.</p>
+<p>Think:</p>
+<pre class="diagram">Known pieces
+   +
+Unknown word
+   ↓
+Build representation from smaller pieces</pre>
+<p>That is one of the important reasons subword approaches became useful.</p>
+
+<h2>5. The Tokenization Pipeline</h2>
+<p>The basic pipeline from the source can be viewed as:</p>
+<pre class="diagram">Raw text
+   │
+   ▼
+Normalize / segment / merge
+   │
+   ▼
+Token sequence
+   │
+   ▼
+Token IDs
+   │
+   ▼
+Embedding lookup
+   │
+   ▼
+Model</pre>
+<p>And on the way back:</p>
+<pre class="diagram">Model output
+   │
+   ▼
+Token IDs
+   │
+   ▼
+Tokens
+   │
+   ▼
+Decode
+   │
+   ▼
+Text / bytes</pre>
+<p>The source's interview framing captures the forward path as:</p>
+<pre class="diagram">normalization
+    ↓
+segmentation / merging
+    ↓
+token IDs
+    ↓
+embedding</pre>
+<h3>Step 1 — Raw Text</h3>
+<p>Start with:</p>
+<pre class="diagram">"Machine learning is useful."</pre>
+<p>At this stage:</p>
+<pre class="diagram">Human-readable text</pre>
+<p>No token IDs yet.</p>
+<h3>Step 2 — Split Into Token Units</h3>
+<p>The tokenizer decides how to represent the text.</p>
+<p>Conceptually:</p>
+<pre class="diagram">"Machine learning is useful."
+
+        ↓
+
+["Machine", " learning", " is", " useful", "."]</pre>
+<p>Or perhaps a different tokenizer may produce a different segmentation.</p>
+<p>There is no universal requirement that every tokenizer use the same boundaries.</p>
+<p>That is important.</p>
+<h3>Step 3 — Convert Tokens to IDs</h3>
+<p>The model works with IDs.</p>
+<p>So:</p>
+<pre class="diagram">["Machine", " learning", " is", " useful", "."]</pre>
+<p>might become something like:</p>
+<pre class="diagram">[8123, 4412, 318, 9274, 13]</pre>
+<p>The exact IDs are tokenizer-specific.</p>
+<p>Conceptually:</p>
+<pre class="diagram">Token
+  ↓
+Vocabulary lookup
+  ↓
+Integer ID</pre>
+<h3>Why IDs?</h3>
+<p>Neural networks operate on numeric tensors.</p>
+<p>So:</p>
+<pre class="diagram">"Machine"</pre>
+<p>eventually becomes:</p>
+<pre class="diagram">8123</pre>
+<p>and then the ID maps to a learned vector representation:</p>
+<pre class="diagram">8123
+  ↓
+Embedding vector</pre>
+<p>So the complete transition is:</p>
+<pre class="diagram">Text
+ ↓
+Token
+ ↓
+ID
+ ↓
+Embedding
+ ↓
+Neural network representation</pre>
+<div class="plain-bridge"><div class="plain-label">Layman Story: Employee ID Cards</div>
+<p>Imagine a large company.</p>
+<p>Humans use names:</p>
+<pre class="diagram">Rahul
+
+Priya
+
+John</pre>
+<p>The company's internal systems may use:</p>
+<pre class="diagram">Employee 1042
+
+Employee 2817
+
+Employee 9031</pre>
+<p>The number isn't the meaning itself.</p>
+<p>It is an identifier used by the system.</p>
+<p>Similarly:</p>
+<pre class="diagram">Token
+  ↓
+Token ID</pre>
+<p>The ID lets the model refer to the token inside its vocabulary.</p></div>
+<h3>Step 4 — Embedding</h3>
+<p>The ID is then mapped to a vector.</p>
+<p>Conceptually:</p>
+<pre class="diagram">Token ID
+   │
+   ▼
+Embedding table
+   │
+   ▼
+Vector</pre>
+<p>So:</p>
+<pre class="diagram">Token ID 8123
+       ↓
+[0.12, -0.42, 0.81, ...]</pre>
+<p>Now the neural network has a numerical representation it can process.</p>
+
+<h2>6. Tokenization Is Not Just Preprocessing</h2>
+<p>This is a very important point from the source.</p>
+<div class="case-note"><strong>Tokenization is not preprocessing; it defines the discrete problem the model is actually trained to solve.</strong></div>
+<p>Why?</p>
+<p>Because changing the tokenizer changes:</p>
+<pre class="diagram">Sequence length
+
+Vocabulary statistics
+
+Token boundaries
+
+Input distribution
+
+Model interface</pre>
+<p>So:</p>
+<pre class="diagram">Same model weights
+
++
+
+Different tokenizer</pre>
+<p>does not automatically mean:</p>
+<pre class="diagram">Same model behavior</pre>
+<p>The tokenizer is part of the model interface.</p>
+<h3>A Very Important Mental Model</h3>
+<p>Think of:</p>
+<pre class="diagram">Tokenizer
+   +
+Model</pre>
+<p>as a pair.</p>
+<p>Not:</p>
+<pre class="diagram">Tokenizer = random preprocessing step
+
+Model     = actual system</pre>
+<p>Instead:</p>
+<pre class="diagram">┌─────────────┐
+│  Tokenizer  │
+└──────┬──────┘
+       │
+       ▼
+┌─────────────┐
+│    Model    │
+└─────────────┘</pre>
+<p>They form part of one interface.</p>
+
+<h2>7. Token Inflation and Context</h2>
+<h3>Token Inflation</h3>
+<p>Now we reach the major engineering concept.</p>
+<p>Suppose:</p>
+<pre class="diagram">Sentence</pre>
+<p>gets represented as:</p>
+<pre class="diagram">10 tokens</pre>
+<p>Another tokenizer might represent the same text as:</p>
+<pre class="diagram">15 tokens</pre>
+<p>Then:</p>
+<div class="formula">15 / 10 = 1.5</div>
+<p>So the second representation is approximately <strong>50% longer</strong> in token count.</p>
+<p>That is token inflation.</p>
+<h3>Why Token Inflation Matters</h3>
+<p>More tokens can affect:</p>
+<pre class="diagram">Context utilization
+      ↓
+More model work
+      ↓
+More memory
+      ↓
+More latency
+      ↓
+Potentially higher cost</pre>
+<p>The source explicitly identifies token inflation as the practical bottleneck.</p>
+<p>So a seemingly small tokenizer difference can become a large production issue.</p>
+<div class="plain-bridge"><div class="plain-label">Layman Story: Packing a Suitcase</div>
+<p>Imagine you have a suitcase with limited capacity.</p>
+<p>Version A:</p>
+<pre class="diagram">10 items</pre>
+<p>Version B:</p>
+<pre class="diagram">15 items</pre>
+<p>Same clothes.</p>
+<p>Different packing efficiency.</p>
+<p>Now suppose your suitcase has a strict limit.</p>
+<p>Version B reaches the limit sooner.</p>
+<p>The same happens with model context:</p>
+<pre class="diagram">Same text
+   +
+More tokens
+   ↓
+Context fills faster</pre></div>
+<h3>Token Count and Context Window</h3>
+<p>Suppose your model allows:</p>
+<pre class="diagram">100 tokens</pre>
+<p>If your tokenizer uses:</p>
+<pre class="diagram">10 tokens</pre>
+<p>for a piece of text, you can fit:</p>
+<pre class="diagram">10 such pieces</pre>
+<p>But if another tokenizer uses:</p>
+<pre class="diagram">20 tokens</pre>
+<p>you can fit only:</p>
+<pre class="diagram">5 such pieces</pre>
+<p>So:</p>
+<div class="case-note"><strong>The same nominal context window can provide different amounts of useful text depending on tokenization.</strong></div>
+
+<h2>8. Vocabulary Size vs Sequence Length</h2>
+<p>The source highlights an important trade-off:</p>
+<div class="case-note"><strong>Vocabulary size trades sequence length against embedding/softmax cost.</strong></div>
+<p>This is very important.</p>
+<p>Think:</p>
+<pre class="diagram">Smaller vocabulary
+      ↓
+Fewer reusable pieces
+      ↓
+More tokens per sentence
+      ↓
+Longer sequences</pre>
+<p>But:</p>
+<pre class="diagram">Larger vocabulary
+      ↓
+More token choices
+      ↓
+Potentially fewer tokens
+      ↓
+Larger embedding / output vocabulary cost</pre>
+<p>So you don't get everything for free.</p>
+<div class="plain-bridge"><div class="plain-label">Layman Story: Lego Catalog</div>
+<p>Imagine a Lego factory.</p>
+<h3>Small catalog</h3>
+<pre class="diagram">Only 100 block types</pre>
+<p>You need many blocks to build complex objects.</p>
+<h3>Huge catalog</h3>
+<pre class="diagram">1,000,000 specialized block types</pre>
+<p>You may need fewer blocks, but now the catalog is huge.</p>
+<p>Tokenization has a similar trade-off:</p>
+<pre class="diagram">Vocabulary size
+       ⇅
+Sequence length</pre>
+<p>The source explicitly frames this as the central vocabulary-size trade-off.</p></div>
+<h3>Why the Trade-Off Matters to the Model</h3>
+<p>Vocabulary size affects at least two important places:</p>
+<pre class="diagram">Embedding
+   +
+Output / softmax vocabulary</pre>
+<p>Conceptually:</p>
+<pre class="diagram">Vocabulary size ↑
+        │
+        ├── Embedding table ↑
+        │
+        └── Output vocabulary ↑</pre>
+<p>Meanwhile:</p>
+<pre class="diagram">Vocabulary size ↓
+        │
+        ▼
+Token count may ↑</pre>
+<p>So tokenizer design is an engineering balancing act.</p>
+
+<h2>9. Tokenization, Probability, and Cost</h2>
+<h3>Tokenization and Probability</h3>
+<p>The source gives:</p>
+<div class="formula">P(text) = P(token₁, token₂, ..., tokenₙ)</div>
+<p>This means that once the text has been tokenized, the model works with a sequence of tokens.</p>
+<p>Instead of thinking:</p>
+<pre class="diagram">P("whole sentence")</pre>
+<p>the model works through:</p>
+<pre class="diagram">P(token₁, token₂, token₃, ..., tokenₙ)</pre>
+<p>Conceptually:</p>
+<pre class="diagram">Text
+ ↓
+Tokens
+ ↓
+Token sequence
+ ↓
+Probability over token sequence</pre>
+<h3>Why Sequence Length Matters Mathematically</h3>
+<p>The source also gives:</p>
+<div class="formula">cost ∝ n_tokens</div>
+<p>At a simple level:</p>
+<pre class="diagram">More tokens
+    ↓
+More sequence positions
+    ↓
+More model work</pre>
+<p>The exact production cost depends on the model and workload, but the important point is:</p>
+<div class="case-note"><strong>Token count is an important resource variable.</strong></div>
+
+<h2>10. Languages, Code, and Special Tokens</h2>
+<h3>Tokenization and Languages</h3>
+<p>Now we reach a very important real-world issue.</p>
+<p>Not every language gets represented equally efficiently by every tokenizer.</p>
+<p>For example:</p>
+<pre class="diagram">English
+
+Spanish
+
+Hindi
+
+Arabic
+
+Chinese
+
+Japanese
+
+Code</pre>
+<p>may produce very different token counts for comparable content.</p>
+<p>The source highlights:</p>
+<div class="case-note"><strong>Multilingual fragmentation</strong> as an important failure/scaling issue.</div>
+<h3>What Is Multilingual Fragmentation?</h3>
+<p>Imagine:</p>
+<pre class="diagram">Language A
+
+One word
+   ↓
+1 token</pre>
+<p>while:</p>
+<pre class="diagram">Language B
+
+Equivalent word
+   ↓
+4 tokens</pre>
+<p>Then Language B is using the context window less efficiently.</p>
+<p>Conceptually:</p>
+<pre class="diagram">Language A
+
+██████████
+1 word → 1 token
+
+Language B
+
+████████████████████████
+1 word → 4 tokens</pre>
+<p>The exact ratios depend on the tokenizer and language.</p>
+<p>The important concept is <strong>fragmentation</strong>.</p>
+<div class="plain-bridge"><div class="plain-label">Layman Story: Translation Efficiency</div>
+<p>Imagine two people packing the same sentence into boxes.</p>
+<p>Person A:</p>
+<pre class="diagram">1 idea → 1 box</pre>
+<p>Person B:</p>
+<pre class="diagram">1 idea → 4 boxes</pre>
+<p>Both contain the same information.</p>
+<p>But Person B uses more storage.</p>
+<p>That is the intuition behind multilingual token fragmentation.</p></div>
+<h3>Why Code Can Be Different Too</h3>
+<p>Code-heavy workloads can also produce unusual token distributions.</p>
+<p>Think:</p>
+<pre class="diagram">Natural language
+      +
+Code
+      +
+Special characters
+      +
+Long identifiers
+      +
+Paths / syntax</pre>
+<p>A tokenizer may represent these patterns differently from ordinary prose.</p>
+<p>The source specifically recommends testing <strong>multilingual and code-heavy workloads independently</strong>.</p>
+<h3>Tokenization and Special Tokens</h3>
+<p>A tokenizer also participates in the model's input/output contract.</p>
+<p>Conceptually:</p>
+<pre class="diagram">Normal token
+
+Special token
+
+End-of-sequence token
+
+Padding-related token
+
+Control token</pre>
+<p>These are not just formatting details.</p>
+<p>The source specifically mentions <strong>special-token contracts</strong> as something that can affect both cost and model behavior.</p>
+<p>So when changing tokenizers, you must verify the special-token behavior too.</p>
+
+<h2>11. Tokenizer Mismatch and Versioning</h2>
+<h3>Tokenizer Mismatch</h3>
+<p>This is one of the most important production risks.</p>
+<p>Imagine:</p>
+<pre class="diagram">Training
+
+Text
+ ↓
+Tokenizer A
+ ↓
+Model</pre>
+<p>Then production accidentally uses:</p>
+<pre class="diagram">Production
+
+Text
+ ↓
+Tokenizer B
+ ↓
+Model</pre>
+<p>Now the model is seeing a different tokenization scheme.</p>
+<pre class="diagram">Expected interface
+        ≠
+Actual interface</pre>
+<p>That can cause problems with:</p>
+<pre class="diagram">Sequence length
+
+Token IDs
+
+Special tokens
+
+Cached prefixes
+
+Dataset statistics
+
+Embedding alignment</pre>
+<p>The source explicitly calls out <strong>tokenizer mismatch</strong> and the possibility that small tokenizer changes invalidate these assumptions.</p>
+<div class="plain-bridge"><div class="plain-label">Layman Story: USB Connector</div>
+<p>Imagine a device expects:</p>
+<pre class="diagram">USB-C</pre>
+<p>but you suddenly provide:</p>
+<pre class="diagram">HDMI</pre>
+<p>The problem isn't that HDMI is "bad."</p>
+<p>The problem is:</p>
+<pre class="diagram">Interface expected
+      ≠
+Interface provided</pre>
+<p>Similarly:</p>
+<pre class="diagram">Model trained with tokenizer A
+            ≠
+Model served with tokenizer B</pre>
+<p>The interface contract breaks.</p></div>
+<h3>Why Small Tokenizer Changes Can Have Large Effects</h3>
+<p>Suppose you make a small change:</p>
+<pre class="diagram">Tokenizer v1
+   ↓
+Tokenizer v2</pre>
+<p>It may seem harmless.</p>
+<p>But it can change:</p>
+<pre class="diagram">Token counts
+
+Prompt lengths
+
+Dataset statistics
+
+Special-token IDs
+
+Cached prefixes
+
+Model input IDs</pre>
+<p>So the effect may propagate through the entire system.</p>
+<p>The source explicitly lists <strong>prompt budgets, cached prefixes, dataset statistics, and embedding alignment</strong> as things that can be invalidated by tokenizer changes.</p>
+<h3>The Correct Mental Model</h3>
+<p>Don't think:</p>
+<pre class="diagram">Tokenizer version
+   ↓
+Small implementation detail</pre>
+<p>Think:</p>
+<pre class="diagram">Tokenizer version
+   ↓
+Model input contract
+   ↓
+Sequence distribution
+   ↓
+System behavior</pre>
+<p>Therefore:</p>
+<div class="case-note"><strong>A tokenizer should be versioned and tested like an API schema.</strong></div>
+<p>That is the source's generalizable production lesson.</p>
+<h3>Tokenizer Versioning</h3>
+<p>A clean production pairing looks like:</p>
+<pre class="diagram">Model v5
+   +
+Tokenizer v5</pre>
+<p>rather than:</p>
+<pre class="diagram">"latest model"
+
++
+
+"latest tokenizer"</pre>
+<p>You want to know exactly which tokenizer belongs to which model.</p>
+<h3>Why Versioning Matters</h3>
+<p>Suppose:</p>
+<pre class="diagram">Model v1 + Tokenizer v1</pre>
+<p>works correctly.</p>
+<p>Then you deploy:</p>
+<pre class="diagram">Model v2 + Tokenizer v2</pre>
+<p>You can compare the two systems.</p>
+<p>But imagine:</p>
+<pre class="diagram">Model v2 + Tokenizer v1.3</pre>
+<p>without explicit tracking.</p>
+<p>Now debugging becomes much harder.</p>
+<p>Versioning gives:</p>
+<pre class="diagram">Reproducibility
+
+Rollback
+
+Debuggability
+
+Compatibility</pre>
+</div>
+<div class="chapter-page">
+<div class="page-label">PAGE 2 · PRODUCTION, TRADE-OFFS, INTERVIEW REASONING</div>
+<h2>12. Tokenization in Production</h2>
+<h3>Online Path</h3>
+<p>A useful online pipeline is:</p>
+<pre class="diagram">                        REQUEST
+                           │
+                           ▼
+                   Validate / Admit
+                           │
+                           ▼
+                      Tokenization
+                           │
+                           ▼
+                      Token IDs
+                           │
+                           ▼
+                      Embeddings
+                           │
+                           ▼
+                        Model
+                           │
+                           ▼
+                        Output
+                           │
+                           ▼
+                       Telemetry</pre>
+<p>This mirrors the source's online production path.</p>
+<h3>Offline / Async Path</h3>
+<p>The source gives:</p>
+<pre class="diagram">Data / artifacts
+      ↓
+Version + validate
+      ↓
+Build / train / index
+      ↓
+Evaluate + promote</pre>
+<p>For tokenization, this can mean:</p>
+<pre class="diagram">Training data
+      ↓
+Tokenizer preparation
+      ↓
+Tokenize dataset
+      ↓
+Validate distribution
+      ↓
+Train / build artifacts
+      ↓
+Evaluate</pre>
+<p>The key point is that tokenization affects the dataset itself.</p>
+<h3>Why Tokenization Changes Dataset Statistics</h3>
+<p>Suppose the raw dataset stays exactly the same.</p>
+<p>You change the tokenizer.</p>
+<p>Then:</p>
+<pre class="diagram">Raw text
+   ↓
+Tokenizer A
+   ↓
+10M tokens</pre>
+<p>versus:</p>
+<pre class="diagram">Raw text
+   ↓
+Tokenizer B
+   ↓
+14M tokens</pre>
+<p>Now:</p>
+<pre class="diagram">Sequence length distribution
+       changes</pre>
+<p>and potentially:</p>
+<pre class="diagram">Training cost
+
+Context usage
+
+Batching
+
+Memory requirements</pre>
+<p>change too.</p>
+<p>That's why the source calls out <strong>dataset statistics</strong>.</p>
+<h3>The Tokenization Production Checklist</h3>
+<p>The source gives a strong practical starting point:</p>
+<div class="case-note"><strong>Version tokenizers with models, meter by actual tokens, and test multilingual/code-heavy workloads independently.</strong></div>
+<p>Let's expand that.</p>
+<pre class="diagram">Tokenizer
+   │
+   ├── Version it
+   │
+   ├── Measure real token counts
+   │
+   ├── Test languages separately
+   │
+   ├── Test code separately
+   │
+   └── Validate special-token behavior</pre>
+<h3>Measure Actual Tokens</h3>
+<p>Don't rely only on:</p>
+<pre class="diagram">Characters
+
+Words
+
+Bytes</pre>
+<p>For a tokenized model workload, the important unit is often:</p>
+<pre class="diagram">TOKEN</pre>
+<p>So production telemetry can track:</p>
+<pre class="diagram">Tokens per request
+
+Tokens per language
+
+Tokens per document
+
+Tokens per code file
+
+Tokens per user</pre>
+<p>The source explicitly says to <strong>meter by actual tokens</strong>.</p>
+<h3>Why Token Metrics Matter</h3>
+<p>Suppose:</p>
+<pre class="diagram">Average request = 1,000 tokens</pre>
+<p>but:</p>
+<pre class="diagram">p99 request = 20,000 tokens</pre>
+<p>Now the tail workload looks very different.</p>
+<p>That can affect:</p>
+<pre class="diagram">Latency
+
+Memory
+
+Context pressure
+
+Capacity</pre>
+<p>So token count should be treated as a workload dimension.</p>
+<h3>Token Count Distribution</h3>
+<p>Don't just measure the average.</p>
+<p>Think:</p>
+<pre class="diagram">Token count
+
+Low ───────── Medium ───────── High
+ │                │              │
+ 500              2K             20K</pre>
+<p>You want to know:</p>
+<pre class="diagram">p50
+
+p95
+
+p99</pre>
+<p>for token counts as well as request latency.</p>
+<h3>Why Tokenization Can Affect Latency</h3>
+<p>The source gives:</p>
+<pre class="diagram">T_request
+
+=
+
+T_queue
+
++
+
+T_compute
+
++
+
+T_memory
+
++
+
+T_network
+
++
+
+T_validation</pre>
+<p>Token count can influence the downstream workload:</p>
+<pre class="diagram">More tokens
+    ↓
+More model work
+    ↓
+More memory use
+    ↓
+Potentially higher latency</pre>
+<p>But remember:</p>
+<div class="case-note"><strong>Tokenization is one contributor to system behavior, not automatically the entire latency bottleneck.</strong></div>
+<h3>The Most Useful Production Question</h3>
+<p>Instead of:</p>
+<div class="case-note">"Is this tokenizer good?"</div>
+<p>ask:</p>
+<div class="case-note"><strong>"What token distribution does this tokenizer produce on my real workload?"</strong></div>
+<p>For example:</p>
+<pre class="diagram">Workload
+   │
+   ├── English
+   ├── Hindi
+   ├── Japanese
+   ├── Arabic
+   ├── Code
+   └── URLs / identifiers
+        │
+        ▼
+Token count distribution
+        │
+        ▼
+Context / cost / latency</pre>
+<p>That is much more actionable.</p>
+
+<h2>13. What Usually Goes Wrong?</h2>
+<p>The source highlights three major failure patterns.</p>
+<h3>Failure 1 — Quality or Correctness Regresses</h3>
+<p>A small tokenizer change can cause downstream changes.</p>
+<p>Conceptually:</p>
+<pre class="diagram">Tokenizer changed
+       ↓
+Token boundaries changed
+       ↓
+Input sequence changed
+       ↓
+Model sees different IDs
+       ↓
+Behavior changes</pre>
+<p>The source specifically mentions:</p>
+<pre class="diagram">Prompt budgets
+
+Cached prefixes
+
+Dataset statistics
+
+Embedding alignment</pre>
+<p>as potential casualties.</p>
+<h3>Diagnosis for Quality Problems</h3>
+<p>Don't ask only:</p>
+<pre class="diagram">"Did the overall benchmark change?"</pre>
+<p>Also inspect:</p>
+<pre class="diagram">Which languages?
+
+Which inputs?
+
+Which sequence lengths?
+
+Which special tokens?
+
+Which tokenization patterns?</pre>
+<p>The source recommends slicing by input regime and inspecting intermediate state.</p>
+<h3>Failure 2 — p99 / Capacity Collapses</h3>
+<p>Suppose token inflation occurs:</p>
+<pre class="diagram">Old tokenizer:
+
+1,000 tokens
+
+New tokenizer:
+
+1,500 tokens</pre>
+<p>Now:</p>
+<pre class="diagram">Token count ↑
+     ↓
+Workload size ↑
+     ↓
+Resource usage ↑
+     ↓
+Capacity ↓</pre>
+<p>At sufficient scale:</p>
+<pre class="diagram">Queue
+ ↓
+Longer wait
+ ↓
+p99 latency</pre>
+<p>The source identifies token inflation and tokenizer mismatch as the mechanism to investigate.</p>
+<h3>Failure 3 — Offline Looks Good, Online Fails</h3>
+<p>Imagine:</p>
+<pre class="diagram">Offline benchmark
+        ↓
+Looks good</pre>
+<p>But production contains:</p>
+<pre class="diagram">More multilingual traffic
+
+More code
+
+Longer prompts
+
+Different user distribution</pre>
+<p>Then:</p>
+<pre class="diagram">Offline token distribution
+        ≠
+Production token distribution</pre>
+<p>Your tokenizer can perform differently in production.</p>
+<p>The source recommends comparing production traces with evaluation slices.</p>
+<h3>Multilingual Fragmentation — The Point Where It Hurts</h3>
+<p>The source's "where this starts to hurt" section highlights:</p>
+<div class="case-note"><strong>Token inflation and multilingual fragmentation.</strong></div>
+<p>Visualize:</p>
+<pre class="diagram">Same amount of semantic content
+
+Language A
+
+██████████
+10 tokens
+
+Language B
+
+████████████████████
+20 tokens
+
+Language C
+
+██████████████████████████
+26 tokens</pre>
+<p>Again, the exact numbers are illustrative.</p>
+<p>The important issue is:</p>
+<div class="case-note"><strong>Equivalent content can consume very different numbers of tokens.</strong></div>
+<h3>Why Multilingual Tokenization Is an Engineering Problem</h3>
+<p>Imagine your application serves:</p>
+<pre class="diagram">60% English
+
+20% Hindi
+
+10% Arabic
+
+10% Code</pre>
+<p>If the tokenizer handles English efficiently but fragments the other workloads heavily:</p>
+<pre class="diagram">English → efficient
+
+Others  → token inflation</pre>
+<p>then your average benchmark may hide the real production cost.</p>
+<p>Therefore:</p>
+<div class="case-note">Test language and workload slices independently.</div>
+<p>That is exactly the production guidance in the source.</p>
+<h3>Code-Heavy Workloads</h3>
+<p>Code may have patterns such as:</p>
+<pre class="diagram">long_identifiers
+
+camelCase
+
+snake_case
+
+symbols
+
+paths
+
+special characters</pre>
+<p>The important source-supported point is not a particular tokenization rule.</p>
+<p>It is:</p>
+<div class="case-note"><strong>Code-heavy workloads should be evaluated independently.</strong></div>
+<p>Why?</p>
+<p>Because workload composition can change token distribution.</p>
+
+<h2>14. The Vocabulary Trade-Off, and Simple vs Production vs Advanced</h2>
+<h3>The Vocabulary Trade-Off Again</h3>
+<p>The central tokenizer design choice can be visualized:</p>
+<pre class="diagram">                Vocabulary size
+                      │
+           ┌──────────┴──────────┐
+           ▼                     ▼
+      Smaller vocab          Larger vocab
+           │                     │
+           ▼                     ▼
+     More token pieces      More token choices
+           │                     │
+           ▼                     ▼
+     Longer sequences      Larger vocab tables
+           │                     │
+           ▼                     ▼
+     More sequence work     More embedding /
+                            softmax cost</pre>
+<p>This is the core trade-off from the source.</p>
+<h3>Simple vs Production vs Advanced</h3>
+<p>The source uses the same three-way production framing:</p>
+<table><thead><tr><th>Approach</th><th>Quality</th><th>Latency</th><th>Memory</th><th>Operational complexity</th></tr></thead><tbody>
+<tr><td><strong>Simple baseline</strong></td><td>Easy to reason about</td><td>Predictable</td><td>Often wasteful</td><td>Low</td></tr>
+<tr><td><strong>Production baseline</strong></td><td>Measured and guarded</td><td>Budgeted</td><td>Managed explicitly</td><td>Medium</td></tr>
+<tr><td><strong>Advanced optimization</strong></td><td>Potentially higher</td><td>Can improve materially</td><td>Specialized</td><td>High</td></tr>
+</tbody></table>
+<p>For tokenization, the progression might be:</p>
+<pre class="diagram">Simple
+  ↓
+Use a known tokenizer
+  ↓
+Measure real workloads
+  ↓
+Version + validate
+  ↓
+Optimize only if needed</pre>
+<h3>When Should You Keep It Simple?</h3>
+<p>The source says:</p>
+<div class="case-note">Use the simpler approach when you need a correctness reference and the resource budget is loose.</div>
+<p>So:</p>
+<pre class="diagram">Need a baseline?
+      ↓
+Use the simpler tokenizer setup
+      ↓
+Measure behavior</pre>
+<p>Don't optimize before you know what problem you're solving.</p>
+<h3>When Should You Move to a Production Baseline?</h3>
+<p>When you have:</p>
+<pre class="diagram">Stable workload
+     +
+Need for observability
+     +
+Need for versioning
+     +
+Need for failure isolation</pre>
+<p>Then:</p>
+<pre class="diagram">Production tokenizer
+        ↓
+Explicit version
+        ↓
+Measured token distribution
+        ↓
+Deployment validation</pre>
+<h3>When Should You Consider Advanced Optimization?</h3>
+<p>When a measured bottleneck exists.</p>
+<p>For example:</p>
+<pre class="diagram">Measured:
+
+Token inflation is too high
+        ↓
+Evaluate alternatives
+        ↓
+Compare token distribution
+        ↓
+Check model compatibility
+        ↓
+Measure production impact</pre>
+<p>Not:</p>
+<pre class="diagram">"Someone said this tokenizer is newer."
+        ↓
+"Let's migrate."</pre>
+<p>The source explicitly warns against premature optimization.</p>
+
+<h2>15. Common Misunderstandings</h2>
+<h3>Common Misunderstanding #1</h3>
+<p><strong>Misconception:</strong> Tokenization is just preprocessing.<br/><strong>Reality:</strong> The source explicitly says:</p>
+<div class="case-note"><strong>Tokenization is not preprocessing; it defines the discrete problem the model is actually trained to solve.</strong></div>
+<p>Changing the tokenizer can change:</p>
+<pre class="diagram">Inputs
+
+Sequence lengths
+
+Vocabulary statistics
+
+Training data representation
+
+Model interface</pre>
+<h3>Common Misunderstanding #2</h3>
+<p><strong>Misconception:</strong> Fewer tokens is always better.<br/><strong>Reality:</strong> Fewer tokens are not free.</p>
+<p>You are trading:</p>
+<pre class="diagram">Sequence length
+
+       ↕
+
+Vocabulary size</pre>
+<p>A larger vocabulary can increase embedding and output/softmax costs.</p>
+<p>The source explicitly identifies this trade-off.</p>
+<h3>Common Misunderstanding #3</h3>
+<p><strong>Misconception:</strong> A tokenizer that works well in English works equally well everywhere.<br/><strong>Reality:</strong> The source specifically warns about:</p>
+<pre class="diagram">Multilingual fragmentation
+
+Code-heavy workloads</pre>
+<p>You have to measure the actual workload distribution.</p>
+<h3>Common Misunderstanding #4</h3>
+<p><strong>Misconception:</strong> I can swap tokenizers without changing the model.<br/><strong>Reality:</strong> The tokenizer is part of the model interface.</p>
+<p>Changing:</p>
+<pre class="diagram">Tokenizer</pre>
+<p>can affect:</p>
+<pre class="diagram">Token IDs
+
+Sequence lengths
+
+Special tokens
+
+Cached prefixes
+
+Dataset statistics
+
+Embedding alignment</pre>
+<h3>Common Misunderstanding #5</h3>
+<p><strong>Misconception:</strong> A context window tells me how much text the model can effectively process.<br/><strong>Reality:</strong> Context is often measured in:</p>
+<pre class="diagram">tokens</pre>
+<p>not words.</p>
+<p>So:</p>
+<pre class="diagram">Same number of words
+        ≠
+Same number of tokens</pre>
+<p>And:</p>
+<pre class="diagram">Same context limit
+        ≠
+Same amount of useful human-readable content</pre>
+<p>Token efficiency matters.</p>
+
+<h2>16. Where Tokenization Starts to Hurt</h2>
+<h3>The Point Where Tokenization Starts to Hurt</h3>
+<p>The source gives a powerful mental model:</p>
+<pre class="diagram">Raw text
+    ↓
+Tokenizer
+    ↓
+Token count
+    ↓
+Context usage
+    ↓
+Compute / memory
+    ↓
+Latency / capacity</pre>
+<p>At some point:</p>
+<pre class="diagram">Token count gets too high
+       ↓
+Token inflation
+       ↓
+Context fills faster
+       ↓
+Capacity and cost become painful</pre>
+<p>The source specifically identifies <strong>token inflation and multilingual fragmentation</strong> as the key pain point.</p>
+<h3>Tokenization as an Addressing Problem</h3>
+<p>There is another useful way to think about it.</p>
+<p>The Transformer works on:</p>
+<pre class="diagram">Token 1
+
+Token 2
+
+Token 3
+
+...
+
+Token N</pre>
+<p>Tokenization determines <strong>how much text becomes one position</strong>.</p>
+<p>So:</p>
+<pre class="diagram">Text
+  ↓
+Tokenization
+  ↓
+Sequence length
+  ↓
+Context utilization</pre>
+<p>This means tokenization affects how efficiently you use the model's context window.</p>
+<h3>Tokenization and Long Inputs</h3>
+<p>Suppose the model allows:</p>
+<pre class="diagram">10,000 tokens</pre>
+<p>Two users send equally long documents in characters.</p>
+<p>User A:</p>
+<pre class="diagram">Document → 8,000 tokens</pre>
+<p>User B:</p>
+<pre class="diagram">Document → 12,000 tokens</pre>
+<p>User B might exceed the model's context limit even though the raw documents look similar in size.</p>
+<p>So:</p>
+<div class="case-note"><strong>Character count and token count are different workload measures.</strong></div>
+<h3>Prompt Budgets</h3>
+<p>Imagine you have a prompt budget of:</p>
+<pre class="diagram">4,000 tokens</pre>
+<p>You carefully design:</p>
+<pre class="diagram">System prompt = 1,000
+
+Context       = 2,000
+
+User input    = 500
+
+Output room   = 500</pre>
+<p>Total:</p>
+<pre class="diagram">4,000</pre>
+<p>Now you change the tokenizer.</p>
+<p>The same text might tokenize to:</p>
+<pre class="diagram">5,000</pre>
+<p>Your carefully designed budget breaks.</p>
+<p>That is why the source specifically mentions <strong>prompt budgets</strong> in tokenizer migration risks.</p>
+<h3>Cached Prefixes</h3>
+<p>Suppose your system caches the beginning of a prompt.</p>
+<p>Conceptually:</p>
+<pre class="diagram">Common prefix
+      ↓
+Token IDs
+      ↓
+Cached representation</pre>
+<p>If the tokenizer changes:</p>
+<pre class="diagram">Same text
+   ↓
+Different token IDs</pre>
+<p>the old cache may no longer match the new representation.</p>
+<p>The source explicitly calls out <strong>cached prefixes</strong> as something tokenizer changes can invalidate.</p>
+<h3>Embedding Alignment</h3>
+<p>The model's token IDs correspond to entries in an embedding vocabulary.</p>
+<p>Conceptually:</p>
+<pre class="diagram">Token ID 100
+     ↓
+Embedding row 100</pre>
+<p>If the tokenizer changes the mapping:</p>
+<pre class="diagram">Token ID 100</pre>
+<p>may represent something different.</p>
+<p>Then:</p>
+<pre class="diagram">Tokenizer vocabulary
+        ↕
+Embedding table</pre>
+<p>must remain aligned.</p>
+<p>The source explicitly identifies <strong>embedding alignment</strong> as a migration concern.</p>
+
+<section class="production-case" data-case-study="t4">
+<h2>Tokenizer Migration — Production Case Study</h2>
+<p>The source's case study is:</p>
+<div class="case-meta"><span class="case-pill"><strong>Tokenizer migration incident class</strong>.</span></div>
+<p>The system-level concern is:</p>
+<pre class="diagram">Vocabulary
+
++
+
+Language coverage
+
++
+
+Special-token contracts</pre>
+<p>which affect:</p>
+<pre class="diagram">Cost
+
++
+
+Model behavior</pre>
+<h3>Binding Constraint</h3>
+<p>The source says:</p>
+<div class="case-note"><strong>Token count, language coverage, and special-token contracts affect both cost and model behavior.</strong></div>
+<p>So the problem isn't only:</p>
+<pre class="diagram">"Does tokenization work?"</pre>
+<p>It is:</p>
+<pre class="diagram">Does it work efficiently
+
+for the actual workload?</pre>
+<h3>Design Intervention</h3>
+<p>The source recommends evaluating:</p>
+<pre class="diagram">Fertility
+
+Unknown / fragmentation behavior
+
+Downstream sequence-length distributions</pre>
+<p>before migration.</p>
+<p>Think of the migration process as:</p>
+<pre class="diagram">Current tokenizer
+       │
+       ▼
+Measure workload
+       │
+       ▼
+Candidate tokenizer
+       │
+       ▼
+Measure again
+       │
+       ▼
+Compare
+       │
+       ▼
+Validate downstream behavior</pre>
+<h3>What Is "Fertility"?</h3>
+<p>Here, think of fertility simply as:</p>
+<div class="case-note"><strong>How many tokens are produced from a piece of text.</strong></div>
+<p>Conceptually:</p>
+<pre class="diagram">Text segment
+     ↓
+Tokenizer
+     ↓
+Number of resulting tokens</pre>
+<p>For example:</p>
+<pre class="diagram">Input A → 2 tokens
+
+Input B → 7 tokens</pre>
+<p>Input B has higher token fragmentation.</p>
+<p>The source recommends benchmarking this behavior before migration.</p>
+<h3>The Migration Failure Chain</h3>
+<p>The source gives:</p>
+<pre class="diagram">text distribution
+      ↓
+token count
+      ↓
+context / KV cost
+      ↓
+latency and truncation</pre>
+<p>This is a very useful production chain.</p>
+<p>Let's expand it:</p>
+<pre class="diagram">Real-world text changes
+        ↓
+Token count changes
+        ↓
+More / fewer positions
+        ↓
+Context and runtime cost changes
+        ↓
+Latency / truncation changes
+        ↓
+User-visible behavior changes</pre>
+<h3>Why Truncation Matters</h3>
+<p>Suppose your model allows:</p>
+<pre class="diagram">8,000 tokens</pre>
+<p>and the tokenizer produces:</p>
+<pre class="diagram">9,500 tokens</pre>
+<p>Something has to happen.</p>
+<p>Conceptually:</p>
+<pre class="diagram">9,500 tokens
+     ↓
+Limit = 8,000
+     ↓
+Some content gets removed</pre>
+<p>So higher tokenization fragmentation can change what information actually reaches the model.</p>
+<p>That is a direct path from tokenizer choice to model behavior.</p>
+<h3>The Most Important Migration Rule</h3>
+<p>The source's general lesson is:</p>
+<div class="case-note"><strong>A tokenizer is part of the model interface; version and test it like an API schema.</strong></div>
+<p>Think:</p>
+<pre class="diagram">Tokenizer change
+      ↓
+Compatibility review
+      ↓
+Offline evaluation
+      ↓
+Production-shaped evaluation
+      ↓
+Migration</pre>
+<p>Not:</p>
+<pre class="diagram">Tokenizer change
+      ↓
+Deploy</pre>
+<p class="source-links"><a href="https://arxiv.org/abs/1804.10959" rel="noopener" target="_blank">Primary/public source ↗</a></p>
+</section>
+
+<h2>17. Research Background and Evidence</h2>
+<h3>Research Background — Subword Units</h3>
+<p>The source cites:</p>
+<div class="source-card"><strong>Neural Machine Translation of Rare Words with Subword Units</strong><div class="meta">Sennrich, Haddow, Birch · 2016</div></div>
+<p>The source highlights its contribution as:</p>
+<div class="case-note"><strong>Popularizing byte-pair subword segmentation for open-vocabulary neural models.</strong></div>
+<p>The key problem was:</p>
+<pre class="diagram">Fixed vocabulary
+      ↓
+Rare / unseen words
+      ↓
+Difficulty</pre>
+<p>Subword segmentation provides reusable pieces.</p>
+<h3>Research Background — SentencePiece</h3>
+<p>The source also cites:</p>
+<div class="source-card"><strong>SentencePiece — Kudo, Richardson · 2018</strong></div>
+<p>The source highlights that it:</p>
+<div class="case-note"><strong>Provided language-independent subword training directly from raw text.</strong></div>
+<p>And gives the practical use case as:</p>
+<div class="case-note"><strong>Commonly used when reproducible, language-agnostic tokenization is needed.</strong></div>
+<p>The important research progression is:</p>
+<pre class="diagram">Open vocabulary problem
+       ↓
+Subword representation
+       ↓
+More flexible language interface
+       ↓
+Production tokenizer infrastructure</pre>
+<h3>Research Results Are Conditional</h3>
+<p>Just like the previous chapters:</p>
+<p>Don't think:</p>
+<pre class="diagram">Paper says X
+    ↓
+X is universally true</pre>
+<p>Ask:</p>
+<pre class="diagram">Which model?
+
+Which dataset?
+
+Which language?
+
+Which workload?
+
+Which scale?
+
+Which metric?</pre>
+<p>The source explicitly says to treat benchmark and paper results as conditional on model family, dataset, scale, metric, and hardware.</p>
+<h3>Three Types of Evidence</h3>
+<p>Use this framework:</p>
+<table><thead><tr><th>Evidence type</th><th>Question</th></tr></thead><tbody>
+<tr><td><strong>Theoretical</strong></td><td>What follows from the formulation?</td></tr>
+<tr><td><strong>Empirical</strong></td><td>On what models/data/scales/metrics was it measured?</td></tr>
+<tr><td><strong>Engineering heuristic</strong></td><td>Under what workloads/hardware assumptions is it useful?</td></tr>
+</tbody></table>
+<p>For tokenization, this is especially important.</p>
+<p>Example:</p>
+<div class="case-note">"Tokenizer A is more efficient."</div>
+<p>You should immediately ask:</p>
+<pre class="diagram">Efficient for what language?
+
+Efficient for what workload?
+
+Efficient by what metric?
+
+Measured where?</pre>
+<h3>Research → Production Checkpoint</h3>
+<p>The source gives:</p>
+<pre class="diagram">Claim
+  ↓
+Assumption
+  ↓
+Measurement
+  ↓
+Failure boundary
+  ↓
+Rollback criterion</pre>
+<p>Example:</p>
+<div class="topic-check"><code>Claim:
+"Tokenizer B reduces token count."
+
+      ↓
+
+Assumption:
+"Production traffic resembles evaluation data."
+
+      ↓
+
+Measurement:
+"Measure token count by language and workload."
+
+      ↓
+
+Failure boundary:
+"Code and Hindi workloads fragment badly."
+
+      ↓
+
+Rollback:
+"Do not migrate if production SLOs regress."</code></div>
+
+<section class="audit">
+<h2>Role Tests and First-Principles Test</h2>
+<h3>AI Engineer Test</h3>
+<div class="agent-ai">
+<p>At the AI Engineer level, ask:</p>
+<div class="case-note"><strong>Can I implement tokenization without guessing the input/output contract?</strong></div>
+<p>You should know:</p>
+<pre class="diagram">Raw text
+   ↓
+Tokenizer
+   ↓
+Tokens
+   ↓
+IDs
+   ↓
+Embeddings</pre>
+<p>And in reverse:</p>
+<pre class="diagram">IDs
+ ↓
+Tokens
+ ↓
+Text / bytes</pre>
+<p>The source recommends explicitly stating the observable inputs/outputs, dominant runtime resource, one invariant, and one measurable regression signal.</p>
+</div>
+<h3>AI Engineer Invariant</h3>
+<div class="agent-ai">
+<p>A useful invariant might be:</p>
+<pre class="diagram">Same tokenizer version
+
++
+
+Same input
+        ↓
+Same tokenization result</pre>
+<p>The exact invariant depends on the implementation.</p>
+<p>The important point is to identify something that must remain stable.</p>
+</div>
+<h3>AI Researcher Test</h3>
+<div class="agent-research">
+<p>The researcher asks:</p>
+<pre class="diagram">Why was this tokenizer designed this way?
+
+What baseline was used?
+
+Which languages were evaluated?
+
+What workload was measured?
+
+What changes at another scale?
+
+What happens with a different data distribution?</pre>
+<p>The source emphasizes:</p>
+<pre class="diagram">Invariants
+
+Ablations
+
+Counterexamples</pre>
+</div>
+<h3>Staff AI Engineer Test</h3>
+<div class="agent-staff">
+<p>Now ask:</p>
+<div class="case-note"><strong>Can this tokenizer survive production load and organizational complexity?</strong></div>
+<p>You should think about:</p>
+<pre class="diagram">Versioning
+
+Compatibility
+
+Latency
+
+Memory
+
+Token distributions
+
+Languages
+
+Code
+
+Special-token contracts
+
+Rollback
+
+Observability</pre>
+<p>The source explicitly frames the staff-level test around numerical/runtime behavior, ownership, degradation, rollback, and observability.</p>
+</div>
+<h3>Staff-Level Questions</h3>
+<div class="agent-staff">
+<p>A staff engineer should ask:</p>
+<pre class="diagram">What happens if the tokenizer changes?
+
+What caches become invalid?
+
+What models depend on this tokenizer?
+
+Which languages get more fragmented?
+
+What happens to prompt budgets?
+
+What happens to truncation?
+
+Can we roll back independently?
+
+Can we compare token distributions before/after?</pre>
+<p>These questions follow directly from the migration risks highlighted in the source.</p>
+</div>
+<h3>First-Principles Test</h3>
+<div class="agent-first">
+<p>Reduce the whole topic to:</p>
+<pre class="diagram">Required capability
+        ↓
+Binding constraint
+        ↓
+Changed computation
+        ↓
+New resource / behavior
+        ↓
+Failure mode</pre>
+<p>For tokenization:</p>
+<pre class="diagram">Need:
+
+Convert open-ended language
+
+into discrete model inputs
+
+        ↓
+
+Constraint:
+
+Huge vocabulary + token-count cost
+
+        ↓
+
+Change:
+
+Use subword units
+
+        ↓
+
+Benefit:
+
+Flexible vocabulary representation
+
+        ↓
+
+Trade-off:
+
+Vocabulary size ↔ sequence length
+
+        ↓
+
+Failure:
+
+Token inflation / fragmentation / mismatch
+
+        ↓
+
+Production consequence:
+
+Cost / context / latency / truncation / behavior</pre>
+</div>
+</section>
+
+<h2>18. The Deepest Mental Model and Production Lessons</h2>
+<h3>The Deepest Mental Model</h3>
+<p>The source's final decision checkpoint says:</p>
+<div class="case-note"><strong>Tokenization is not preprocessing; it defines the discrete problem the model is actually trained to solve.</strong></div>
+<p>That means:</p>
+<pre class="diagram">Tokenizer
+    ↓
+Defines the sequence
+    ↓
+Defines the unit of prediction
+    ↓
+Defines token statistics
+    ↓
+Defines sequence length
+    ↓
+Influences system cost</pre>
+<p>So tokenizer design is part of model design.</p>
+<h3>The Full Tokenization Story</h3>
+<pre class="diagram">Raw human language
+        │
+        ▼
+Open-ended vocabulary
+        │
+        ▼
+Need discrete model interface
+        │
+        ▼
+Subword tokenization
+        │
+        ▼
+Token sequence
+        │
+        ▼
+Token IDs
+        │
+        ▼
+Embeddings
+        │
+        ▼
+Transformer
+        │
+        ▼
+Sequence length affects cost
+        │
+        ▼
+Token inflation matters
+        │
+        ▼
+Multilingual / code fragmentation matters
+        │
+        ▼
+Tokenizer becomes production infrastructure
+        │
+        ▼
+Version + measure + validate</pre>
+<h3>Tokenization vs Transformer</h3>
+<p>This distinction is useful.</p>
+<h3>Tokenization</h3>
+<p>Answers:</p>
+<div class="case-note"><strong>"How do we represent the text as discrete units?"</strong></div>
+<pre class="diagram">Text
+ ↓
+Tokens</pre>
+<h3>Transformer</h3>
+<p>Answers:</p>
+<div class="case-note"><strong>"How do we process those token representations?"</strong></div>
+<pre class="diagram">Tokens
+ ↓
+Attention + MLP stack</pre>
+<p>So:</p>
+<pre class="diagram">Raw text
+   ↓
+Tokenization
+   ↓
+Token IDs
+   ↓
+Transformer</pre>
+<p>Tokenization comes first.</p>
+<h3>Tokenization vs Embedding</h3>
+<p>Another common confusion.</p>
+<h3>Tokenization</h3>
+<pre class="diagram">"hello"
+ ↓
+token
+ ↓
+ID 1234</pre>
+<h3>Embedding</h3>
+<pre class="diagram">ID 1234
+ ↓
+vector</pre>
+<p>So:</p>
+<pre class="diagram">Tokenization
+   ↓
+IDs
+
+Embedding
+   ↓
+Vectors</pre>
+<p>They are different stages.</p>
+<h3>The Complete Model Input Pipeline</h3>
+<p>Memorize:</p>
+<pre class="diagram">               RAW TEXT
+                  │
+                  ▼
+             TOKENIZATION
+                  │
+                  ▼
+              TOKEN IDS
+                  │
+                  ▼
+              EMBEDDING
+                  │
+                  ▼
+          POSITION INFORMATION
+                  │
+                  ▼
+            TRANSFORMER
+                  │
+                  ▼
+                LOGITS
+                  │
+                  ▼
+               OUTPUT</pre>
+<p>Now notice the relationship with the topics you already studied:</p>
+<pre class="diagram">Tokenization
+     ↓
+Position
+     ↓
+Transformer
+     ↓
+Attention</pre>
+<p>These concepts form one connected pipeline.</p>
+<h3>Why Tokenization Affects Everything Later</h3>
+<p>Suppose the tokenizer creates:</p>
+<pre class="diagram">1,000 tokens</pre>
+<p>instead of:</p>
+<pre class="diagram">700 tokens</pre>
+<p>Then:</p>
+<pre class="diagram">Tokenization
+      ↓
+Sequence length
+      ↓
+Transformer workload
+      ↓
+Attention workload
+      ↓
+Memory
+      ↓
+Latency</pre>
+<p>So tokenization can influence downstream system cost even though it happens before the Transformer.</p>
+<h3>Tokenization and Context Efficiency</h3>
+<p>Think of the context window as a container:</p>
+<pre class="diagram">┌──────────────────────────────┐
+│         CONTEXT WINDOW       │
+│                              │
+│  token token token token     │
+│  token token token token     │
+│  token token token token     │
+└──────────────────────────────┘</pre>
+<p>A more fragmented tokenizer fills the container faster.</p>
+<pre class="diagram">Efficient tokenization
+
+████████████
+
+Fragmented tokenization
+
+████████████████████</pre>
+<p>So:</p>
+<div class="case-note"><strong>Token efficiency determines how much semantic content you can fit into a fixed token budget.</strong></div>
+<h3>The Production Dashboard</h3>
+<p>For a production tokenizer, useful metrics can include:</p>
+<pre class="diagram">              TOKENIZER
+
+Token count
+ ├── p50
+ ├── p95
+ └── p99
+
+By workload
+ ├── English
+ ├── Hindi
+ ├── Arabic
+ ├── Other languages
+ └── Code
+
+Behavior
+ ├── Fragmentation
+ ├── Truncation
+ └── Special-token behavior
+
+System impact
+ ├── Latency
+ ├── Memory
+ └── Capacity</pre>
+<p>The exact dashboard depends on the system, but the source strongly points toward measuring the workload distribution and the saturated resource.</p>
+<h3>A Good Tokenizer Migration Process</h3>
+<p>A practical flow is:</p>
+<pre class="diagram">Current tokenizer
+       │
+       ▼
+Capture real production workload
+       │
+       ▼
+Measure current token distribution
+       │
+       ▼
+Evaluate candidate tokenizer
+       │
+       ▼
+Compare:
+ ├── Token count
+ ├── Languages
+ ├── Code
+ ├── Special tokens
+ ├── Truncation
+ └── Quality
+       │
+       ▼
+Model compatibility check
+       │
+       ▼
+Shadow / offline evaluation
+       │
+       ▼
+Production-shaped validation
+       │
+       ▼
+Migration</pre>
+<p>The source specifically recommends benchmarking fertility, fragmentation/unknown behavior, and downstream sequence-length distributions before migration.</p>
+<h3>The Binding Constraint Principle</h3>
+<p>Again, the larger engineering lesson:</p>
+<div class="case-note"><strong>Progress often comes from changing the binding constraint.</strong></div>
+<p>For tokenization:</p>
+<pre class="diagram">Token count too high
+        ↓
+Find why
+        ↓
+Language fragmentation?
+
+Vocabulary choice?
+
+Workload mismatch?
+        ↓
+Change tokenizer design
+        ↓
+Measure again</pre>
+<p>You don't optimize blindly.</p>
+<h3>The "Don't Just Look at Average" Rule</h3>
+<p>Suppose:</p>
+<pre class="diagram">Average tokens = 1,200</pre>
+<p>Looks fine.</p>
+<p>But:</p>
+<pre class="diagram">Hindi requests → 4,000
+
+Code requests  → 5,500
+
+Long documents → 20,000</pre>
+<p>The average hides important production behavior.</p>
+<p>Therefore:</p>
+<pre class="diagram">Average
+
++
+
+Distribution
+
++
+
+Tail
+
++
+
+Workload slice</pre>
+<p>matter.</p>
+<p>The source repeatedly emphasizes production distributions and tail behavior.</p>
+<h3>The Biggest Production Lesson</h3>
+<p>A tokenizer may look like a tiny component:</p>
+<pre class="diagram">Text
+ ↓
+Tokenizer</pre>
+<p>But the real dependency graph is:</p>
+<pre class="diagram">               TOKENIZER
+                   │
+      ┌────────────┼────────────┐
+      ▼            ▼            ▼
+  Token count   Token IDs   Special tokens
+      │            │            │
+      ▼            ▼            ▼
+Context usage   Embeddings   Model contract
+      │
+      ▼
+Compute / Memory
+      │
+      ▼
+Latency / Capacity
+      │
+      ▼
+User experience</pre>
+<p>That is why tokenizer changes should be treated carefully.</p>
+
+<h2>19. Interview Explanations</h2>
+<h3>Interview Explanation — Fresh Graduate</h3>
+<div class="case-note"><strong>Tokenization is the process of breaking text into smaller units that a model can work with. The units are converted into token IDs and then into embeddings. We usually use reusable pieces rather than requiring every possible word to have its own token. The important thing is that tokenization affects how many tokens a piece of text becomes, which affects context usage, cost, and model behavior.</strong></div>
+<h3>Interview Explanation — Engineer</h3>
+<div class="case-note"><strong>Tokenization is the discrete interface between raw text and a neural language model. It maps symbol sequences into tokens and IDs whose distribution determines sequence length and vocabulary statistics. A key design trade-off is vocabulary size versus sequence length: smaller vocabularies can increase token count, while larger vocabularies increase embedding and output-vocabulary costs. In production I would version the tokenizer with the model, measure actual token distributions, and separately evaluate multilingual, code-heavy, and long-context workloads.</strong></div>
+<p>This follows the source's core framing.</p>
+<h3>Interview Explanation — Senior / Staff</h3>
+<div class="case-note"><strong>I think of tokenization as an API contract rather than preprocessing. It determines the discrete sequence the model is trained and served on, so changing it can alter token distributions, prompt budgets, cached prefixes, dataset statistics, special-token behavior, and embedding alignment. Before a migration, I would benchmark token fertility and sequence-length distributions across the actual production workload, especially multilingual and code-heavy slices, and validate downstream cost, truncation, quality, and p95/p99 behavior.</strong></div>
+<p>The production concerns here come directly from the source's tokenizer migration case study and production checklist.</p>
+<h3>Interview Follow-Up — "Why Do We Use Subwords?"</h3>
+<p>Answer:</p>
+<div class="case-note">Because language has an open vocabulary. Subword units provide reusable pieces that can represent rare or unfamiliar words without requiring every possible complete word to exist as its own vocabulary entry.</div>
+<p>This reflects the source's open-vocabulary framing and its cited subword work.</p>
+<h3>Interview Follow-Up — "What Is Token Inflation?"</h3>
+<p>Answer:</p>
+<div class="case-note">Token inflation means the tokenizer produces more tokens for the same underlying text. Higher token counts consume more context and can increase downstream compute, memory, latency, and cost.</div>
+<h3>Interview Follow-Up — "What Is the Vocabulary Trade-Off?"</h3>
+<p>Answer:</p>
+<div class="case-note">A larger vocabulary can represent more text with fewer tokens, but it increases vocabulary-related embedding and output costs. A smaller vocabulary can reduce vocabulary cost but may produce longer token sequences.</div>
+<h3>Interview Follow-Up — "Why Can Changing a Tokenizer Break a Model?"</h3>
+<p>Answer:</p>
+<div class="case-note">Because the tokenizer is part of the model interface. A tokenizer change can alter token IDs, sequence lengths, special-token contracts, cached prefixes, dataset statistics, and embedding alignment.</div>
+<h3>Interview Follow-Up — "Why Test Languages Separately?"</h3>
+<p>Answer:</p>
+<div class="case-note">Because tokenization efficiency is workload-dependent. A tokenizer that is efficient for one language can fragment another language into substantially more tokens, changing context usage and system cost. Code-heavy workloads can behave differently as well.</div>
+<h3>Interview Follow-Up — "What Should I Measure Before a Tokenizer Migration?"</h3>
+<p>Answer:</p>
+<pre class="diagram">Token count distribution
+
+Fragmentation / fertility
+
+Languages separately
+
+Code separately
+
+Special-token behavior
+
+Truncation
+
+Downstream latency
+
+Quality</pre>
+<p>The source specifically recommends benchmarking fertility, fragmentation/unknown behavior, and downstream sequence-length distributions before migration.</p>
+<h3>Interview Follow-Up — "Why Isn't a Better Benchmark Enough?"</h3>
+<p>Answer:</p>
+<div class="case-note">Because the benchmark may not represent the deployment distribution. I would compare production traces with evaluation slices and verify the real resource and quality behavior before making a deployment decision.</div>
+
+<h2>20. Connected Stack, Mental Models, and What to Remember</h2>
+<h3>The Connected AI Stack</h3>
+<p>Now connect Tokenization with the previous topics:</p>
+<pre class="diagram">                    RAW TEXT
+                       │
+                       ▼
+                  TOKENIZATION
+                       │
+                       ▼
+                  TOKEN IDs
+                       │
+                       ▼
+                   EMBEDDING
+                       │
+                       ▼
+              POSITIONAL SIGNAL
+                       │
+                       ▼
+                TRANSFORMER
+                       │
+                       ▼
+                  ATTENTION
+                       │
+                       ▼
+                     MLP
+                       │
+                       ▼
+                    LOGITS
+                       │
+                       ▼
+                    OUTPUT</pre>
+<p>You can now see the relationship:</p>
+<pre class="diagram">Tokenization
+     ↓
+What are the units?
+
+Positional Encoding
+     ↓
+Where are the units?
+
+Attention
+     ↓
+Which units matter?
+
+Transformer
+     ↓
+How do we repeatedly transform the representations?</pre>
+<h3>The Entire Tokenization Causal Chain</h3>
+<p>This is the most important diagram:</p>
+<pre class="diagram">Natural language
+      │
+      ▼
+Open vocabulary
+      │
+      ▼
+Need discrete representation
+      │
+      ▼
+Subword tokenization
+      │
+      ▼
+Token IDs
+      │
+      ▼
+Model input
+      │
+      ▼
+Token count
+      │
+      ▼
+Context usage
+      │
+      ▼
+Compute / memory / latency
+      │
+      ▼
+Production cost</pre>
+<p>And:</p>
+<pre class="diagram">Tokenizer choice
+      │
+      ├── Vocabulary size
+      │
+      ├── Token count
+      │
+      ├── Language behavior
+      │
+      ├── Code behavior
+      │
+      └── Special-token contract
+              │
+              ▼
+        Model behavior</pre>
+<h3>Beginner Mental Model</h3>
+<p>Remember tokenization as:</p>
+<pre class="diagram">Sentence
+   ↓
+Break into Lego pieces
+   ↓
+Give each piece an ID
+   ↓
+Turn IDs into vectors
+   ↓
+Send to Transformer</pre>
+<p>Simple.</p>
+<h3>Engineer Mental Model</h3>
+<p>Remember it as:</p>
+<pre class="diagram">                TOKENIZER
+
+Raw symbols
+    │
+    ▼
+Segmentation / merging
+    │
+    ▼
+Subword units
+    │
+    ▼
+Token IDs
+    │
+    ▼
+Embedding interface
+    │
+    ▼
+Sequence length
+    │
+    ▼
+Compute / memory / context</pre>
+<p>The key production concept:</p>
+<pre class="diagram">Tokenizer = MODEL INTERFACE</pre>
+<p>not just:</p>
+<pre class="diagram">Tokenizer = preprocessing</pre>
+<h3>Senior Engineer Mental Model</h3>
+<p>Think:</p>
+<pre class="diagram">                TOKENIZER
+                    │
+      ┌─────────────┼─────────────┐
+      ▼             ▼             ▼
+  Representation   Statistics   Interface
+      │             │             │
+      ▼             ▼             ▼
+  Token IDs       Token count   Special tokens
+      │             │             │
+      └─────────────┼─────────────┘
+                    ▼
+             Model behavior
+                    │
+         ┌──────────┼──────────┐
+         ▼          ▼          ▼
+       Cost      Context     Quality
+         │          │          │
+         └──────────┼──────────┘
+                    ▼
+                Production</pre>
+<h3>Staff-Level Mental Model</h3>
+<p>At Staff level:</p>
+<pre class="diagram">                TOKENIZER
+                    │
+                    ▼
+            Binding constraint?
+                    │
+      ┌─────────────┼──────────────┐
+      ▼             ▼              ▼
+  Token inflation  Fragmentation   Mismatch
+      │             │              │
+      └─────────────┼──────────────┘
+                    ▼
+           Resource / behavior
+                    │
+                    ▼
+                 Measure
+                    │
+                    ▼
+                Validate
+                    │
+                    ▼
+                Rollback
+                    │
+                    ▼
+                Production</pre>
+<p>The core question becomes:</p>
+<div class="case-note"><strong>What does this tokenizer do to the actual workload?</strong></div>
+<h3>The Research-to-Production Loop</h3>
+<pre class="diagram">Research claim
+     ↓
+Assumption
+     ↓
+Evaluate tokenizer
+     ↓
+Measure token distribution
+     ↓
+Test languages / code
+     ↓
+Measure downstream behavior
+     ↓
+Find failure boundary
+     ↓
+Define rollback</pre>
+<p>That is the mature workflow.</p>
+<h3>What You Should Remember</h3>
+<h3>Core Idea</h3>
+<div class="case-note"><strong>Tokenization converts raw text into the discrete units the model actually processes.</strong></div>
+<h3>Why It Exists</h3>
+<pre class="diagram">Natural language
+      +
+Open vocabulary
+      ↓
+Need discrete representation</pre>
+<h3>Main Design</h3>
+<pre class="diagram">Subword units
+   ↓
+Token IDs
+   ↓
+Embeddings</pre>
+<h3>Main Trade-Off</h3>
+<pre class="diagram">Vocabulary size
+      ⇅
+Sequence length</pre>
+<h3>Main Production Problem</h3>
+<pre class="diagram">Token inflation
+
++
+
+Tokenizer mismatch
+
++
+
+Multilingual / code fragmentation</pre>
+<h3>Main Production Rule</h3>
+<pre class="diagram">Version tokenizer with model
+        +
+Measure actual tokens
+        +
+Test real workloads</pre>
+<h3>The One Diagram to Memorize</h3>
+<pre class="diagram">                        RAW TEXT
+                           │
+                           ▼
+                     TOKENIZATION
+                           │
+                ┌──────────┴──────────┐
+                ▼                     ▼
+         Subword units          Special tokens
+                │                     │
+                └──────────┬──────────┘
+                           ▼
+                       TOKEN IDs
+                           │
+                           ▼
+                        EMBEDDING
+                           │
+                           ▼
+                      TRANSFORMER
+                           │
+                           ▼
+                        OUTPUT</pre>
+<p>And underneath:</p>
+<pre class="diagram">                  TOKENIZER
+
+               Vocabulary size
+                      │
+                      ▼
+                 Token count
+                      │
+         ┌────────────┼────────────┐
+         ▼            ▼            ▼
+      Context       Compute     Cost/latency
+         │
+         ▼
+    Model behavior</pre>
+<h3>The Final Mental Picture</h3>
+<p>Imagine you're building a bridge between two worlds.</p>
+<p>On one side:</p>
+<pre class="diagram">Human language</pre>
+<p>On the other:</p>
+<pre class="diagram">Neural network</pre>
+<p>The tokenizer is the bridge.</p>
+<pre class="diagram"> HUMAN LANGUAGE
+       │
+       ▼
+┌───────────────────┐
+│     TOKENIZER     │
+│                   │
+│   Break text      │
+│   into units      │
+└─────────┬─────────┘
+          │
+          ▼
+     TOKEN IDs
+          │
+          ▼
+      EMBEDDINGS
+          │
+          ▼
+      TRANSFORMER</pre>
+<p>If you change the bridge, you may change:</p>
+<pre class="diagram">How much traffic fits
+
+How fast traffic moves
+
+How much storage is required
+
+How different languages behave
+
+How the destination interprets the traffic</pre>
+<p>That is why tokenization is much more important than it first appears.</p>
+<h3>Final One-Line Summary</h3>
+<div class="status"><strong>Tokenization is the model's discrete language interface: it converts raw text into reusable units and token IDs, and that choice directly affects vocabulary size, sequence length, context efficiency, multilingual behavior, model compatibility, cost, and production behavior.</strong></div>
+<h3>Final Cause-and-Effect Chain</h3>
+<p>Memorize this:</p>
+<pre class="diagram">Need to represent natural language
+              ↓
+Vocabulary is open-ended
+              ↓
+Need discrete model interface
+              ↓
+Use subword units
+              ↓
+Convert text → tokens → IDs
+              ↓
+Token distribution determines sequence length
+              ↓
+Sequence length affects context / compute / memory
+              ↓
+Vocabulary size creates a trade-off
+              ↓
+Different languages / code fragment differently
+              ↓
+Tokenizer becomes part of model interface
+              ↓
+Changing tokenizer can break budgets / caches / alignment
+              ↓
+Version + measure + validate</pre>
+</div>
+<div class="status"><strong>The simplest way to remember the entire topic:</strong><br/><strong>Tokenization decides what the model considers one piece of information. That decision determines how many pieces your text becomes, how efficiently you use the context window, how much the system costs, and how the model behaves across different workloads.</strong></div>
+<div class="chapter-nav"><a href="positional-encoding.html">← Previous</a><a href="../index.html">Contents ↑</a><a href="scaling-laws.html">Next →</a></div>
+</section>
+</main>
+</div>
+<footer><a href="../index.html">Contents</a> &middot; <a href="../assets/glossary.html">Glossary</a></footer>
+<script src="../assets/glossary.js"></script>
+</body></html>

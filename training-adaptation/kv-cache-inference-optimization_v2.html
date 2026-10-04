@@ -1,0 +1,1063 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/><meta content="width=device-width,initial-scale=1" name="viewport"/>
+<title>KV-Cache & Inference Optimization — AI Engineering &amp; Research Deep Dive</title>
+<link rel="stylesheet" href="../assets/style.css"/>
+</head>
+<body id="top">
+<div class="layout single">
+<main>
+<section class="chapter" data-category="Training &amp; Adaptation" id="t7">
+<div class="chapter-kicker">Training &amp; Adaptation · Chapter 07 / 101</div>
+<h1>KV-Cache &amp; Inference Optimization</h1>
+<p class="lede">A production-and-research treatment for engineers who already know ML, neural networks, and Transformer fundamentals. Each chapter splits into two pages: <strong>mechanism</strong> first, then systems, failure modes, and research reasoning.</p><div class="plain-bridge"><div class="plain-label">In plain English</div><p>The <span class="glossary-term" data-glossary-term="KV cache" data-tooltip="saved attention information from earlier tokens that makes generation faster but consumes GPU memory" tabindex="0">KV cache</span> saves work during token-by-token generation, but it can quickly become the biggest GPU-memory cost when requests get long or concurrent.</p></div>
+<div class="chapter-page">
+<div class="page-label">PAGE 1 · MECHANISM, MENTAL MODEL, THEORY</div>
+<h2>1. Big Idea — Plain English</h2>
+<p>The easiest way to understand this topic is:</p>
+<div class="status"><strong>KV-cache prevents the LLM from repeatedly recomputing attention information it has already calculated.</strong></div>
+<p>But there is an important twist:</p>
+<div class="status"><strong>The optimization saves computation, but the saved information consumes GPU memory.</strong></div>
+<p>At small scale, that's a huge win. At large scale—long conversations, long contexts, many simultaneous users—the <span class="glossary-term" data-glossary-term="KV cache" data-tooltip="saved attention information from earlier tokens that makes generation faster but consumes GPU memory" tabindex="0">KV cache</span> itself can become the thing limiting your system.</p>
+<p>That is the central idea of the entire material.</p>
+<p>Imagine you're asking an LLM:</p>
+<div class="case-note">"Explain transformers."</div>
+<p>The model generates:</p>
+<pre class="diagram">Transformers
+are
+neural
+networks
+that
+...</pre>
+<p>It generates <strong>one token at a time</strong>.</p>
+<p>When generating the next token, the model needs to attend to the tokens it has already seen.</p>
+<p>A naive implementation could repeatedly recompute the attention <strong>Key (K)</strong> and <strong>Value (V)</strong> representations for all previous tokens.</p>
+<p>That's wasteful.</p>
+<p>Instead:</p>
+<pre class="diagram">First time:
+Prompt
+  ↓
+Compute K and V
+  ↓
+Store K and V
+  ↓
+KV Cache</pre>
+<p>Then:</p>
+<pre class="diagram">Next token
+    ↓
+Compute K/V only for new token
+    ↓
+Look at cached K/V
+    ↓
+Generate next token</pre>
+<p>So:</p>
+<div class="status"><strong>KV-cache = remember the expensive attention state you've already computed so you don't calculate it again.</strong></div>
+<p>The source describes KV-cache/inference optimization more broadly as techniques that persist previously computed attention K/V while also optimizing memory movement, batching, and scheduling.</p>
+<h2>2. Quick Technical Explanation</h2>
+<p>During transformer attention, each token gets three representations:</p>
+<pre class="diagram">Q = Query
+K = Key
+V = Value</pre>
+<p>Attention is conceptually:</p>
+<pre class="diagram">Attention(Q,K,V)
+       │
+       ├── Q → What am I looking for?
+       ├── K → What information does each token contain?
+       └── V → What information should I retrieve?</pre>
+<p>During autoregressive generation, the previous tokens' <strong>K and V don't change</strong>.</p>
+<p>Therefore, instead of recomputing them:</p>
+<pre class="diagram">Previous tokens
+      ↓
+K₁ K₂ K₃ K₄ ...
+V₁ V₂ V₃ V₄ ...
+      ↓
+      CACHE</pre>
+<p>At the next decoding step:</p>
+<pre class="diagram">New token
+   ↓
+New Q, K, V
+   ↓
+Q attends to
+cached K/V + new K/V
+   ↓
+Next token</pre>
+<p>The source specifically describes the production mechanism as:</p>
+<div class="status"><strong>Prefill → store K/V → incremental decode → paged/batched serving.</strong></div>
+<h2>3. What Problem Does It Solve?</h2>
+<h3>The problem</h3>
+<p>LLMs generate autoregressively.</p>
+<p>That means:</p>
+<pre class="diagram">Token 1
+  ↓
+Token 2
+  ↓
+Token 3
+  ↓
+Token 4
+  ↓
+...</pre>
+<p>At every step, the model needs information from the previous context.</p>
+<p>Without KV-cache, you're repeatedly doing work like:</p>
+<pre class="diagram">Step 1:
+Calculate K/V for token 1
+
+Step 2:
+Calculate K/V for token 1 + token 2
+
+Step 3:
+Calculate K/V for token 1 + token 2 + token 3
+
+Step 4:
+Calculate K/V for token 1 + token 2 + token 3 + token 4</pre>
+<p>A lot of that is repeated.</p>
+<p><strong>KV-cache changes this</strong></p>
+<pre class="diagram">Prefill:
+Prompt → calculate K/V once → store
+
+Decode 1:
+New token → calculate only new K/V → use cache
+
+Decode 2:
+New token → calculate only new K/V → use cache
+
+Decode 3:
+New token → calculate only new K/V → use cache</pre>
+<p>So:</p>
+<pre class="diagram">Without cache
+Repeated computation
+       ↓
+Wasted work
+
+With cache
+Reuse previous K/V
+       ↓
+Less recomputation</pre>
+<p>The important engineering point from the source is that <strong>removing one bottleneck doesn't mean the system is now free of bottlenecks</strong>. The pressure moves toward <strong>KV bandwidth and fragmentation</strong>.</p>
+<h2>4. Layman Analogy — A Restaurant Kitchen</h2>
+<p>Imagine a restaurant receiving a large order.</p>
+<p>The kitchen has already prepared:</p>
+<pre class="diagram">Rice
+Chicken
+Sauce
+Vegetables</pre>
+<p>Now another dish requires the same rice and sauce.</p>
+<p>Would you throw everything away and cook the rice again?</p>
+<p>No.</p>
+<p>You keep the prepared ingredients and reuse them.</p>
+<p>That's KV-cache.</p>
+<pre class="diagram">Expensive preparation
+        ↓
+Store prepared state
+        ↓
+Reuse it
+        ↓
+Only prepare the new portion</pre>
+<p>But now imagine <strong>1,000 customers</strong>.</p>
+<p>Your refrigerator starts filling up.</p>
+<p>Eventually:</p>
+<pre class="diagram">More customers
+     ↓
+More stored ingredients
+     ↓
+More refrigerator memory
+     ↓
+Less available space
+     ↓
+You need better storage management</pre>
+<p>That's exactly the KV-cache scaling problem.</p>
+<h2>5. Core Mental Model</h2>
+<p>Keep this picture in your head:</p>
+<pre class="diagram">                    PROMPT
+                       │
+                       ▼
+                   PREFILL
+                       │
+                 Compute K/V
+                       │
+                       ▼
+                 ┌───────────┐
+                 │ KV CACHE  │
+                 └───────────┘
+                       │
+                       │
+          ┌────────────┴────────────┐
+          ▼                         ▼
+      New token                Cached history
+          │                         │
+       K/V new ─────────────────────┤
+          │                         │
+          └──────────┬──────────────┘
+                     ▼
+                  ATTENTION
+                     │
+                     ▼
+                NEXT TOKEN
+                     │
+                     ▼
+              Append new K/V
+                     │
+                     └──────→ KV CACHE</pre>
+<p>The cache is therefore <strong>state</strong>.</p>
+<p>And the deeper engineering question becomes:</p>
+<div class="status"><strong>Where do we keep this state, how much does it cost, and how do we allocate it efficiently?</strong></div>
+<p>That's why the source says generation becomes more of a <strong>state-management and memory-bandwidth workload</strong> at scale rather than simply a matrix-multiplication workload.</p>
+<h2>6. Under the Hood — Step by Step</h2>
+<p>There are two major phases.</p>
+<h3>Phase A — Prefill</h3>
+<p>Suppose the prompt is:</p>
+<pre class="diagram">"The cat sat on the"</pre>
+<p>The model processes the whole prompt.</p>
+<p>Conceptually:</p>
+<pre class="diagram">"The" → K₁,V₁
+"cat" → K₂,V₂
+"sat" → K₃,V₃
+"on" → K₄,V₄
+"the" → K₅,V₅</pre>
+<p>These are stored:</p>
+<pre class="diagram">KV Cache:
+
+K₁ V₁
+K₂ V₂
+K₃ V₃
+K₄ V₄
+K₅ V₅</pre>
+<p>This is called <strong>prefill</strong>.</p>
+<h3>Phase B — Decode</h3>
+<p>Now the model generates:</p>
+<pre class="diagram">"mat"</pre>
+<p>The newly generated token gets:</p>
+<pre class="diagram">K₆
+V₆</pre>
+<p>We don't throw away the old cache.</p>
+<p>We append:</p>
+<pre class="diagram">K₁ V₁
+K₂ V₂
+K₃ V₃
+K₄ V₄
+K₅ V₅
+K₆ V₆</pre>
+<p>Then the next token can attend over the complete history.</p>
+<h3>Next step</h3>
+<p>Suppose the model generates:</p>
+<pre class="diagram">"and"</pre>
+<p>Only the new token's K/V needs to be added:</p>
+<pre class="diagram">K₇
+V₇</pre>
+<p>Now:</p>
+<pre class="diagram">K₁ V₁
+K₂ V₂
+K₃ V₃
+K₄ V₄
+K₅ V₅
+K₆ V₆
+K₇ V₇</pre>
+<p>And so on.</p>
+<p>This is why the cache grows with sequence length.</p>
+<h2>7. The Formula, a Numerical Example, and Why KV-Cache Becomes the Problem</h2>
+<h3>The Important Formula</h3>
+<p>The source gives:</p>
+<div class="formula">M<sub>KV</sub> ≈ 2 · L · T · H<sub>d</sub> · bytes</div>
+<p>Let's decode it.</p>
+<table><thead><tr><th>Symbol</th><th>Meaning</th></tr></thead><tbody><tr><td>M<sub>KV</sub></td><td>KV-cache memory</td></tr><tr><td>L</td><td>number of transformer layers</td></tr><tr><td>T</td><td>sequence length / number of tokens</td></tr><tr><td>H<sub>d</sub></td><td>hidden dimension per relevant representation</td></tr><tr><td><code>bytes</code></td><td>bytes used per stored value</td></tr></tbody></table>
+<p>The <code>2</code> is there because we're storing:</p>
+<pre class="diagram">K + V</pre>
+<p>So conceptually:</p>
+<div class="formula">KV Memory ∝ layers × tokens × hidden representation × 2</div>
+<p>The most important part is:</p>
+<div class="formula">M<sub>KV</sub> ∝ T</div>
+<p>So if the sequence gets longer, the KV cache gets larger.</p>
+<p>And if you have many concurrent requests:</p>
+<pre class="diagram">Request 1 → KV cache
+Request 2 → KV cache
+Request 3 → KV cache
+...
+Request N → KV cache</pre>
+<p>total memory pressure can become enormous.</p>
+<h3>Small Numerical Example</h3>
+<p>Suppose, purely for intuition:</p>
+<pre class="diagram">Layers = 32
+Tokens = 1,000
+Hidden dimension = 4,096
+Bytes/value = 2</pre>
+<p>Using the simplified formula:</p>
+<div class="formula">M<sub>KV</sub> ≈ 2 × 32 × 1000 × 4096 × 2</div>
+<p>That's:</p>
+<div class="formula">524,288,000 bytes</div>
+<p>≈ <strong>524 MB</strong> under this simplified formulation.</p>
+<p>Now suppose you have:</p>
+<pre class="diagram">10 concurrent requests</pre>
+<p>You could be around:</p>
+<pre class="diagram">524 MB × 10
+≈ 5.24 GB</pre>
+<p>And that's only the KV-cache component under the simplified assumptions.</p>
+<p>This is the key scaling intuition:</p>
+<pre class="diagram">Longer context
+      +
+More concurrent requests
+      ↓
+More KV state
+      ↓
+More GPU memory pressure</pre>
+<p><strong>Additional context:</strong> Real model architectures can have different K/V head dimensions and sharing schemes, so the exact memory calculation can differ from this simplified formula.</p>
+<p><strong>Recent real-world example (2026):</strong> DeepSeek-V4.1-Flash reports a global KV cache of <strong>890 bytes per token</strong>. The simplified example above works out to 524,288,000 bytes ÷ 1,000 tokens = <strong>524,288 bytes per token</strong>. That is roughly 590× larger. The two are different models, so this is not a fair benchmark. It only shows how much room real designs have to shrink KV state by sharing it across layers, storing it in fewer bits, and moving it to cheaper storage. See the case study at the end of this chapter.</p>
+<h3>Why KV-Cache Becomes the Problem</h3>
+<p>Here's the interesting part.</p>
+<p>Initially:</p>
+<pre class="diagram">Without KV cache
+       ↓
+Huge repeated computation
+       ↓
+KV cache
+       ↓
+Much less recomputation</pre>
+<p>Great.</p>
+<p>But now:</p>
+<pre class="diagram">More tokens
+    ↓
+More cached K/V
+    ↓
+More GPU memory</pre>
+<p>And with concurrent users:</p>
+<pre class="diagram">User A ──→ KV
+User B ──→ KV
+User C ──→ KV
+User D ──→ KV
+...
+User N ──→ KV</pre>
+<p>Eventually:</p>
+<pre class="diagram">GPU memory
+████████████████████
+          ↑
+       KV cache</pre>
+<p>You have less room for additional requests.</p>
+<p>So the optimization creates a <strong>new resource cost</strong>.</p>
+<p>That is the fundamental trade-off.</p>
+</div>
+<div class="chapter-page">
+<div class="page-label">PAGE 2 · PRODUCTION, TRADE-OFFS, INTERVIEW REASONING</div>
+<h2>8. Scaling and Trade-offs</h2>
+<p>The source emphasizes that the practical bottleneck may become <strong>KV bandwidth and fragmentation before raw compute</strong>.</p>
+<p>Think of the system like this:</p>
+<pre class="diagram">Workload increases
+       │
+       ├── sequence length ↑
+       ├── concurrency ↑
+       ├── requests ↑
+       └── model scale ↑
+              │
+              ▼
+          KV state ↑
+              │
+              ▼
+     Memory pressure ↑
+              │
+              ▼
+    Fragmentation / bandwidth
+              │
+              ▼
+      Capacity decreases</pre>
+<p>So the question isn't simply:</p>
+<div class="case-note">"What's the Big-O?"</div>
+<p>Instead:</p>
+<div class="status"><strong>Which resource saturates first on my actual hardware and workload?</strong></div>
+<p>The source explicitly gives this request-latency decomposition:</p>
+<div class="formula">T<sub>request</sub> = T<sub>queue</sub> + T<sub>compute</sub> + T<sub>memory</sub> + T<sub>network</sub> + T<sub>validation</sub></div>
+<p>This is much more useful operationally because it tells you that compute isn't necessarily the only—or even dominant—source of <span class="glossary-term" data-glossary-term="latency" data-tooltip="how long one request takes from start to finish" tabindex="0">latency</span>.</p>
+<h2>9. Production Architecture</h2>
+<h3>Offline / Async</h3>
+<p>The generic production pipeline from the source is:</p>
+<pre class="diagram">Data / Artifacts
+      ↓
+Version + Validate
+      ↓
+Build / Train / Index
+      ↓
+Evaluate + Promote</pre>
+<p>This prepares the artifacts used by the serving system.</p>
+<h3>Online / Critical Path</h3>
+<p>During a real user request:</p>
+<pre class="diagram">User Request
+      ↓
+Validate / Admit
+      ↓
+KV Cache + Inference Optimization
+      ↓
+Verify / Guard
+      ↓
+Response
+      +
+Telemetry</pre>
+<p>The source recommends several practical mechanisms:</p>
+<pre class="diagram">Paged / block KV allocation
+          +
+Continuous batching
+          +
+Prefix caching
+          +
+Admission control
+          +
+Cache-aware scheduling</pre>
+<p>These aren't random optimizations. They're ways of managing the <strong>new bottleneck created by cached state</strong>.</p>
+<h2>10. Paged KV Cache and the vLLM Case Study</h2>
+<h3>Why Paged KV Cache?</h3>
+<p>This is one of the most important ideas in the material.</p>
+<p>Imagine you have:</p>
+<pre class="diagram">GPU memory:
+
+[Request A][Request A][Request A][free][Request B][free][Request C]</pre>
+<p>Different requests have different lengths.</p>
+<p>As requests arrive and finish, you can end up with small holes.</p>
+<p>That's <strong>fragmentation</strong>.</p>
+<p>Even if total free memory is technically large enough, you may not have memory arranged in the right way for the next request.</p>
+<p><strong>Traditional approach</strong></p>
+<p>Think:</p>
+<pre class="diagram">Request A → reserve one big continuous region
+Request B → reserve another region
+Request C → reserve another region</pre>
+<p>Problem:</p>
+<pre class="diagram">Different request lengths
+        ↓
+Different allocation sizes
+        ↓
+Unused gaps
+        ↓
+Fragmentation
+        ↓
+Lower concurrency</pre>
+<p><strong>Paged allocation</strong></p>
+<p>Instead, divide memory into fixed-size blocks:</p>
+<pre class="diagram">GPU Memory
+
+┌─────┬─────┬─────┬─────┬─────┬─────┐
+│ B1  │ B2  │ B3  │ B4  │ B5  │ B6  │
+└─────┴─────┴─────┴─────┴─────┴─────┘</pre>
+<p>A request can use:</p>
+<pre class="diagram">Request A → B1 → B4 → B5
+Request B → B2 → B6
+Request C → B3</pre>
+<p>They don't necessarily need one giant contiguous region.</p>
+<p>This is the central idea behind <strong>PagedAttention</strong>.</p>
+<h3>vLLM Case Study</h3>
+<p>The source uses <strong>vLLM / PagedAttention</strong> as the production case study.</p>
+<p>The problem:</p>
+<pre class="diagram">Variable request lengths
+        ↓
+KV-cache fragmentation
+        +
+Over-reservation
+        ↓
+Less concurrent batching
+        ↓
+Capacity / latency problems</pre>
+<p>The design intervention:</p>
+<pre class="diagram">KV Cache
+   ↓
+Fixed-size blocks
+   ↓
+Logical block tables
+   ↓
+More flexible memory allocation</pre>
+<p>The source summarizes the causal chain as:</p>
+<pre class="diagram">variable lengths
+       ↓
+fragmented KV memory
+       ↓
+smaller batches
+       ↓
+paged allocation</pre>
+<p>The general engineering lesson given is important:</p>
+<div class="status"><strong>Memory management can increase throughput without changing model weights or model quality.</strong></div>
+<p>That's a very useful AI-infrastructure insight.</p>
+<p>Sometimes you don't need a better model.</p>
+<p>You need a better <strong>runtime</strong>.</p>
+<h2>11. Continuous Batching and Prefix Caching</h2>
+<h3>Continuous Batching</h3>
+<p>Suppose:</p>
+<pre class="diagram">Request A → needs 100 tokens
+Request B → needs 10 tokens
+Request C → needs 50 tokens</pre>
+<p>A naive batching strategy may wait for an entire batch to finish.</p>
+<p>But generation lengths differ.</p>
+<p>That creates wasted capacity.</p>
+<p><strong><span class="glossary-term" data-glossary-term="continuous batching" data-tooltip="adding and removing requests from a running inference batch instead of waiting for the whole batch to finish" tabindex="0">Continuous batching</span></strong> allows the serving system to dynamically manage requests as tokens are generated and requests finish.</p>
+<p>Conceptually:</p>
+<pre class="diagram">Time →
+
+A █████████████████
+B ████
+C █████████
+D      ███████████
+E          █████</pre>
+<p>Instead of treating the entire batch as one rigid unit, the scheduler keeps the GPU occupied with available work.</p>
+<p>This connects to the source's research reference:</p>
+<p><strong>Orca (Yu et al., 2022)</strong> introduced iteration-level scheduling to improve <span class="glossary-term" data-glossary-term="throughput" data-tooltip="how much work the system completes in a given time" tabindex="0">throughput</span> for heterogeneous generation lengths.</p>
+<h3>Prefix Caching</h3>
+<p>Another optimization mentioned by the source is <strong><span class="glossary-term" data-glossary-term="prefix caching" data-tooltip="reusing computation for a shared beginning of multiple prompts" tabindex="0">prefix caching</span></strong>.</p>
+<p>Suppose many users send requests beginning with:</p>
+<pre class="diagram">System prompt
++
+Company documentation
++
+Common instructions
++
+User question</pre>
+<p>The common prefix may be identical.</p>
+<p>Instead of computing the same prefix state repeatedly:</p>
+<pre class="diagram">Request A ──┐
+Request B ──┼──→ Same prefix
+Request C ──┘
+                ↓
+           Reusable state</pre>
+<p>The system can reuse that state where supported.</p>
+<p>Again, you're exchanging:</p>
+<pre class="diagram">More stored state
+       ↕
+Less repeated computation</pre>
+<h2>12. What Usually Goes Wrong</h2>
+<p>The source identifies three major classes of failure.</p>
+<h3>Failure 1 — Quality/correctness regression</h3>
+<pre class="diagram">Long requests
+     ↓
+More state
+     ↓
+Eviction / fragmentation
+     ↓
+Capacity pressure
+     ↓
+Potential system behavior problems</pre>
+<p>The recommended diagnostic approach is to <strong>slice the workload by input regime and inspect intermediate state</strong>, rather than blindly tuning one global threshold.</p>
+<h3>Failure 2 — p99 / capacity collapse</h3>
+<p>Cause:</p>
+<pre class="diagram">KV bandwidth + fragmentation</pre>
+<p>Detection:</p>
+<pre class="diagram">Workload shape
+      +
+Concurrency
+      +
+Live resource utilization
+      +
+Tail latency</pre>
+<p>Then:</p>
+<pre class="diagram">Bound state
+OR
+change scheduling/partitioning
+OR
+reduce work</pre>
+<p>The important idea is that average latency can look fine while the tail is collapsing.</p>
+<h3>Failure 3 — Looks great offline, fails online</h3>
+<p>Maybe your benchmark says:</p>
+<pre class="diagram">Latency ↓ 20%</pre>
+<p>But production says:</p>
+<pre class="diagram">p99 ↑
+capacity ↓
+OOM ↑</pre>
+<p>Why?</p>
+<p>Because your benchmark distribution didn't match production.</p>
+<p>The source recommends comparing <strong>production traces with evaluation slices</strong> and adding deployment-shaped regressions and independent quality gates.</p>
+<h2>13. Performance Metrics and the Three Optimization Levels</h2>
+<h3>The Performance Metrics You Should Watch</h3>
+<p>Don't only measure:</p>
+<pre class="diagram">Average latency</pre>
+<p>You should think about:</p>
+<pre class="diagram">                    ┌── p50
+Latency ────────────┼── p95
+                    └── p99
+
+Throughput
+Memory utilization
+KV-cache utilization
+Queue time
+Compute time
+Memory time
+Concurrency
+Request length
+Generation length</pre>
+<p>For example:</p>
+<pre class="diagram">p50 = 200 ms
+p95 = 500 ms
+p99 = 5 seconds</pre>
+<p>Average latency could look acceptable while 1% of users experience terrible latency.</p>
+<p>That's why the source repeatedly emphasizes <strong>tail behavior</strong>.</p>
+<h3>The Three Optimization Levels</h3>
+<p>The source gives a useful progression.</p>
+<table><thead><tr><th>Approach</th><th>Main characteristic</th></tr></thead><tbody><tr><td>Simple baseline</td><td>Easy to reason about, low operational complexity</td></tr><tr><td>Production baseline</td><td>Measured, guarded, explicitly manages resources</td></tr><tr><td>Advanced optimization</td><td>Specialized, potentially much better, but higher complexity</td></tr></tbody></table>
+<p>The key principle is:</p>
+<div class="status"><strong>Don't optimize because an optimization exists. Optimize because you've measured a bottleneck.</strong></div>
+<p>This is probably one of the most important engineering lessons in the whole chapter.</p>
+<h2>14. Common Misunderstandings and Where It Starts Hurting</h2>
+<h3>Common Misunderstandings</h3>
+<p><strong>Misconception 1:</strong> "More compute automatically gives better results."<br/><strong>Reality:</strong> A system can become constrained by memory, bandwidth, queueing, synchronization, etc.</p>
+<pre class="diagram">More compute
+    ≠
+More useful capacity</pre>
+<p><strong>Misconception 2:</strong> "Big-O tells me the production bottleneck."<br/><strong>Reality:</strong> Not necessarily.</p>
+<p>Complexity notation abstracts away:</p>
+<pre class="diagram">hardware
+memory movement
+network
+synchronization
+queueing
+execution topology</pre>
+<p>So:</p>
+<pre class="diagram">Theoretical complexity
+        ≠
+Actual production latency</pre>
+<p><strong>Misconception 3:</strong> "If the prototype works, production is solved."<br/><strong>Reality:</strong> No.</p>
+<p>Production needs:</p>
+<pre class="diagram">Versioning
+Observability
+Isolation
+Rollback
+Evaluation
+Explicit state ownership</pre>
+<p>The source explicitly makes this distinction.</p>
+<h3>Where Does It Start Hurting?</h3>
+<p>The interesting threshold is:</p>
+<pre class="diagram">KV state growth
+       ↓
+GPU memory pressure
+       ↓
+Fragmentation / bandwidth pressure
+       ↓
+Reduced concurrency
+       ↓
+Queueing
+       ↓
+p95/p99 latency
+       ↓
+Capacity collapse</pre>
+<p>So when planning capacity, don't just ask:</p>
+<div class="case-note">"How much GPU compute do I have?"</div>
+<p>Ask:</p>
+<div class="status"><strong>"How much live KV state can this GPU sustain for my actual request-length and concurrency distribution?"</strong></div>
+<p>That's the more useful production question.</p>
+<h2>15. Research Background and Research Discipline</h2>
+<h3>Research Background</h3>
+<p>The source highlights two important research anchors.</p>
+<p><strong>PagedAttention — Kwon et al., 2023</strong></p>
+<p><strong>Problem</strong></p>
+<p>LLM serving had inefficient KV-cache allocation.</p>
+<p>Variable-length requests caused:</p>
+<pre class="diagram">KV memory
+   ↓
+fragmentation
+   +
+over-allocation
+   ↓
+wasted memory</pre>
+<p><strong>Key idea</strong></p>
+<p>Treat KV-cache allocation more like <strong>paged memory management</strong>.</p>
+<pre class="diagram">KV Cache
+   ↓
+Fixed-size blocks
+   ↓
+Logical mapping
+   ↓
+Less fragmentation
+   ↓
+Better utilization</pre>
+<p>The source says the work demonstrated reduced fragmentation and enabled sharing, while practitioners use paged/block allocation and continuous batching as core serving primitives.</p>
+<p><strong>Orca — Yu et al., 2022</strong></p>
+<p><strong>Problem</strong></p>
+<p>Generation requests have different lengths.</p>
+<p>Rigid batching wastes resources.</p>
+<p><strong>Key idea</strong></p>
+<p><strong>Iteration-level scheduling.</strong></p>
+<p>Instead of treating the whole generation request as one indivisible batch:</p>
+<pre class="diagram">Request
+  ↓
+iteration
+  ↓
+iteration
+  ↓
+iteration</pre>
+<p>the scheduler can make decisions at finer granularity.</p>
+<p>This improves throughput for heterogeneous generation lengths according to the source.</p>
+<h3>Research Discipline</h3>
+<p>Don't interpret:</p>
+<div class="case-note">"Paper improved throughput by X%"</div>
+<p>as:</p>
+<div class="case-note">"This always improves throughput by X%."</div>
+<p>The result depends on:</p>
+<pre class="diagram">Model
++
+Hardware
++
+Workload
++
+Dataset
++
+Sequence lengths
++
+Concurrency
++
+Metric</pre>
+<p>So the research-to-production chain should be:</p>
+<pre class="diagram">Claim
+ ↓
+Assumption
+ ↓
+Measurement
+ ↓
+Failure boundary
+ ↓
+Rollback criterion</pre>
+<p>This is explicitly the research/production checkpoint in the material.</p>
+<p><strong>3. DeepSeek-V4.1-Flash — DeepSeek-AI, September 2026 (update)</strong></p>
+<p><strong>Problem</strong></p>
+<p>Agentic workloads send very long, input-heavy contexts (up to 1M tokens). Prefill compute, GPU memory for KV, and KV storage/bandwidth all become expensive at the same time.</p>
+<p><strong>Key idea</strong></p>
+<p>Attack the KV state from several sides at once, instead of only fixing allocation.</p>
+<pre class="diagram">KV state too big
+     ↓
+Share it across layers      (CSA2)
+     +
+Store it in fewer bits      (FP4)
+     +
+Keep less of it on disk     (SWA Bounded Replay)
+     +
+Do less prefill work        (Causal Encoder-Decoder)
+     ↓
+Smaller HBM footprint + smaller persistent cache</pre>
+<p>PagedAttention manages KV memory better. This paper makes KV memory smaller. They solve different parts of the problem and can be used together. The numbers are reported by the authors on their own model and workload. Apply the research-discipline checkpoint above before trusting them elsewhere.</p>
+<h2>16. AI/ML Engineer and Staff / Senior Perspectives</h2>
+<h3>AI/ML Engineer Perspective</h3>
+<p>As an AI/ML engineer, you should be able to answer:</p>
+<p><strong>What state am I storing?</strong></p>
+<pre class="diagram">K/V representations</pre>
+<p><strong>Why am I storing it?</strong></p>
+<pre class="diagram">Avoid recomputation</pre>
+<p><strong>What does it cost?</strong></p>
+<pre class="diagram">GPU memory
++
+memory bandwidth
++
+allocation complexity</pre>
+<p><strong>What should I monitor?</strong></p>
+<pre class="diagram">KV utilization
+GPU memory
+request length
+concurrency
+queue time
+p95/p99
+throughput
+OOM/eviction behavior</pre>
+<p><strong>What should I optimize?</strong></p>
+<p>Not necessarily the model.</p>
+<p>Potentially:</p>
+<pre class="diagram">memory allocation
+batching
+scheduling
+prefix reuse
+admission control</pre>
+<h3>Staff / Senior AI Engineer Perspective</h3>
+<p>At senior level, the question changes.</p>
+<p>It's no longer:</p>
+<div class="case-note">"How does KV-cache work?"</div>
+<p>It's:</p>
+<div class="status"><strong>"What is the binding constraint of my serving system?"</strong></div>
+<p>For example:</p>
+<pre class="diagram">GPU compute saturated?
+        ↓
+Optimize compute / batching
+
+Memory saturated?
+        ↓
+Optimize KV allocation / quantization / context
+
+KV fragmentation?
+        ↓
+Paged allocation
+
+Queueing?
+        ↓
+Admission / scheduling / capacity
+
+Long-tail latency?
+        ↓
+Investigate p95/p99 and workload distribution</pre>
+<p>The source's deeper principle is:</p>
+<div class="status"><strong>Progress often comes from changing the binding constraint.</strong></div>
+<p>That is a very strong systems-engineering mindset.</p>
+<h2>17. First-Principles Thinking</h2>
+<p>Here are the questions you should be able to reason through.</p>
+<p><strong>Question 1</strong></p>
+<p><strong>Why does KV-cache exist?</strong></p>
+<p>Because previous tokens' K/V representations can be reused during autoregressive decoding.</p>
+<p><strong>Question 2</strong></p>
+<p><strong>Why does the cache become a problem?</strong></p>
+<p>Because:</p>
+<pre class="diagram">More tokens
+    ↓
+More stored K/V
+    ↓
+More memory</pre>
+<p>and:</p>
+<pre class="diagram">More concurrent requests
+    ↓
+More independent KV state</pre>
+<p><strong>Question 3</strong></p>
+<p><strong>Why does paging help?</strong></p>
+<p>Because variable-sized allocation can cause fragmentation.</p>
+<p>Fixed-size blocks allow more flexible allocation.</p>
+<p><strong>Question 4</strong></p>
+<p><strong>Why isn't reducing compute automatically enough?</strong></p>
+<p>Because the system can move from:</p>
+<pre class="diagram">compute-bound</pre>
+<p>to:</p>
+<pre class="diagram">memory-bandwidth-bound</pre>
+<p>or:</p>
+<pre class="diagram">memory-capacity-bound</pre>
+<p>or:</p>
+<pre class="diagram">queue-bound</pre>
+<p>Optimization often <strong>moves the bottleneck</strong> rather than eliminating bottlenecks altogether.</p>
+<p><strong>Question 5</strong></p>
+<p><strong>Why can an optimization improve average latency but hurt <span class="glossary-term" data-glossary-term="p99" data-tooltip="the latency below which 99% of requests finish; a useful way to see tail slowness" tabindex="0">p99</span>?</strong></p>
+<p>Because production workloads aren't uniform.</p>
+<p>A technique may help the typical request while making long requests or high-concurrency cases worse.</p>
+<h2>18. Interview Answer and Follow-up Questions</h2>
+<h3>Interview Answer — 30–45 Seconds</h3>
+<p>You can say:</p>
+<div class="case-note"><strong>"KV-cache is a technique used during autoregressive LLM inference where we persist previously computed attention keys and values so we don't recompute them for every generated token. During prefill, we compute the K/V state for the prompt, and during decode we only compute the new token's K/V and attend over the cached history. This reduces recomputation, but the trade-off is that KV state grows with sequence length and concurrency, so memory capacity, bandwidth, and fragmentation can become the new bottlenecks. In production, techniques like paged KV allocation, continuous batching, prefix caching, admission control, and cache-aware scheduling help manage that state. I would measure p95/p99 latency, throughput, KV utilization, memory pressure, and workload distribution rather than relying only on average benchmark results."</strong></div>
+<p>That captures the central mechanism, trade-off, production implications, and measurement mindset from the source.</p>
+<h3>Follow-up Interview Questions</h3>
+<p><strong>Beginner</strong></p>
+<p><strong>Q: What does KV stand for?</strong></p>
+<p>Key and Value.</p>
+<p><strong>Q: Why don't we cache Query?</strong></p>
+<p>The source focuses on persisting previously computed K/V during autoregressive decoding; Q is generated for the current decoding step rather than representing reusable history.</p>
+<p><strong>Q: When is the cache created?</strong></p>
+<p>During prefill, the model computes the prompt's K/V state.</p>
+<p><strong>Intermediate</strong></p>
+<p><strong>Q: Why does KV-cache memory grow with sequence length?</strong></p>
+<p>Because each additional token contributes additional K/V state that must be retained for future attention.</p>
+<p><strong>Q: Why does concurrency matter?</strong></p>
+<p>Because each active request can carry its own live KV state.</p>
+<p><strong>Q: What is fragmentation?</strong></p>
+<p>Usable memory becomes split into inefficient gaps or allocations, reducing how effectively available memory can support concurrent requests.</p>
+<p><strong>Senior</strong></p>
+<p><strong>Q: Why does PagedAttention help?</strong></p>
+<p>It treats KV allocation using fixed-size blocks and logical mappings, reducing fragmentation and over-reservation.</p>
+<p><strong>Q: What would you monitor in production?</strong></p>
+<p>At minimum:</p>
+<pre class="diagram">p50/p95/p99 latency
+throughput
+queue time
+GPU memory
+KV utilization
+request length
+generation length
+concurrency
+OOM/eviction behavior</pre>
+<p><strong>Q: Besides paged allocation, how can you reduce KV-cache cost?</strong></p>
+<p>Paging fixes fragmentation, but the state itself can also be made smaller or cheaper to keep:</p>
+<pre class="diagram">Share      → reuse K/V (and sparse-attention indices) across layers
+Shrink     → store K/V in fewer bits (for example FP4 or FP8)
+Move       → tier storage: GPU HBM → host DRAM → SSD
+Recompute  → rebuild a small piece of state instead of storing it</pre>
+<p>Each lever trades memory for something else: possible quality loss, extra latency, or extra complexity. Measure quality and p99 after each change.</p>
+<p><strong>Q: How would you decide whether an optimization is worth deploying?</strong></p>
+<pre class="diagram">Measured bottleneck
+       ↓
+Optimization addresses bottleneck
+       ↓
+Quality remains acceptable
+       ↓
+SLO remains acceptable
+       ↓
+Operational complexity is justified
+       ↓
+Deploy</pre>
+<h2>19. Connected Concepts and the Binding Constraint</h2>
+<h3>Connected Concepts</h3>
+<p>This topic sits inside the broader LLM serving stack:</p>
+<pre class="diagram">Training
+   ↓
+Transformer Architecture
+   ↓
+Attention
+   ↓
+Autoregressive Generation
+   ↓
+        ┌──────────────┐
+        │  KV CACHE    │
+        └──────────────┘
+               ↓
+     Inference Optimization
+               ↓
+     Batching / Scheduling
+               ↓
+     Memory Management
+               ↓
+      Distributed Serving
+               ↓
+       Observability
+               ↓
+       Production SLOs</pre>
+<p>The source itself recommends thinking of this as:</p>
+<pre class="diagram">Architecture
+     ↓
+Training objective
+     ↓
+Optimization
+     ↓
+Inference/runtime
+     ↓
+Distributed systems
+     ↓
+Evaluation
+     ↓
+Safety/reliability</pre>
+<p>and selecting adjacent concepts based on <strong>what produces the inputs, what consumes the outputs, what resource becomes scarce, and how failure is detected</strong>.</p>
+<h3>The Most Important Concept: Binding Constraint</h3>
+<p>This is the deeper lesson I would want you to remember.</p>
+<p>Imagine your system initially looks like:</p>
+<pre class="diagram">                    BOTTLENECK
+                       ↓
+GPU Compute ████████████████████
+Memory      ███████
+Network     ████
+Queue       ██</pre>
+<p>You optimize compute.</p>
+<p>Now:</p>
+<pre class="diagram">GPU Compute ███████
+Memory      ████████████████████  ← NEW BOTTLENECK
+Network     ████
+Queue       ██</pre>
+<p>You didn't necessarily make the system "bad."</p>
+<p>You <strong>moved the bottleneck</strong>.</p>
+<p>Then you optimize memory:</p>
+<pre class="diagram">GPU Compute ███████
+Memory      ███████
+Network     ████
+Queue       ████████████████████  ← NEW BOTTLENECK</pre>
+<p>This is why the source says:</p>
+<div class="status"><strong>A strong engineer connects model behavior, statistical assumptions, hardware resources, and operational feedback into one causal model rather than optimizing a metric in isolation.</strong></div>
+<h2>20. Remember: One Mental Model, One Diagram, Cause → Effect Chain</h2>
+<h3>One Mental Model</h3>
+<p>If you remember only one thing, remember this:</p>
+<pre class="diagram">LLM generates token by token
+          ↓
+Previous K/V is still useful
+          ↓
+Cache it
+          ↓
+Avoid recomputation
+          ↓
+Inference becomes cheaper
+          ↓
+BUT cached state grows
+          ↓
+GPU memory + bandwidth become important
+          ↓
+Fragmentation reduces usable capacity
+          ↓
+Paged allocation + batching + scheduling
+          ↓
+Better serving efficiency</pre>
+<h3>One Diagram to Memorize</h3>
+<pre class="diagram">                 PROMPT
+                    │
+                    ▼
+                 PREFILL
+                    │
+                 K / V
+                    │
+                    ▼
+              ┌───────────┐
+              │ KV CACHE  │
+              └─────┬─────┘
+                    │
+          ┌─────────┴─────────┐
+          │                   │
+       New Token        Cached History
+          │                   │
+        K / V ────────────────┘
+          │
+          ▼
+       ATTENTION
+          │
+          ▼
+      NEXT TOKEN
+          │
+          ▼
+     Append K/V
+          │
+          └──────────→ KV CACHE</pre>
+<h3>Cause → Effect Chain</h3>
+<pre class="diagram">Autoregressive generation
+          ↓
+Repeated attention over history
+          ↓
+Repeated K/V computation is wasteful
+          ↓
+Cache previous K/V
+          ↓
+Less recomputation
+          ↓
+KV state grows with tokens + concurrency
+          ↓
+Memory bandwidth + fragmentation become bottlenecks
+          ↓
+Paged allocation + batching + scheduling
+          ↓
+Better memory utilization / serving capacity
+          ↓
+More operational complexity</pre>
+</div>
+<section class="production-case" data-case-study="t7-deepseek-v4-1-flash">
+<h2>Recent Case Study — DeepSeek-V4.1-Flash (September 2026)</h2>
+<div class="case-meta"><span class="case-pill">System: DeepSeek-V4.1-Flash / long-context agentic serving</span><span class="case-pill">Evidence: vendor paper, arXiv 2609.19969 (17 Sep 2026)</span><span class="case-pill">Scope: KV footprint + prefill cost + storage tiers</span></div>
+<h3>Binding constraint</h3>
+<p>Agentic workloads (tool calls, long histories, up to 1M tokens of context) are input-heavy. The paper names three pressures at once: expensive prefill compute, GPU memory (HBM) for the live KV cache, and capacity and bandwidth for storing and moving cached KV (SSD and host memory).</p>
+<h3>Design intervention</h3>
+<p>Four separate moves, each removing a different cost:</p>
+<pre class="diagram">KV COST LEVERS
+
+Share      → CSA2: layers reuse main K/V and sparse-attention indices
+Shrink     → FP4 main KV cache
+Move       → global KV on SSD, sliding-window KV in host DRAM
+Recompute  → SWA Bounded Replay rebuilds a small window on a cache hit</pre>
+<p><strong>1. Causal Encoder-Decoder.</strong> The 40 layers are split into a 20-layer encoder and a 20-layer decoder. The decoder's global K/V is projected from the encoder's final hidden state instead of being computed layer by layer. During prefill only about <strong>8B</strong> parameters are activated. During decode about <strong>16B</strong> are activated. The paper says this nearly halves prefill computation, which matters because agent workflows send many large input prompts.</p>
+<pre class="diagram">PREFILL                          DECODE
+
+Prompt                           New token
+  ↓                                ↓
+Encoder (20 layers)              Encoder + Decoder (all layers)
+  ↓                                ↓
+Final encoder state              Uses cached K/V
+  ↓
+Project K/V for decoder layers
+(no full decoder pass for global attention)</pre>
+<p><strong>2. Compressed Sparse Attention 2 (CSA2).</strong> Instead of every layer building its own KV and its own sparse-attention index, each layer gets a fixed mode:</p>
+<table class="case-table"><tr><th>Mode</th><th>Main KV</th><th>Sparse indices (top-K)</th></tr><tr><td>Full</td><td>Computed fresh</td><td>New selection</td></tr><tr><td>Reindex</td><td>Reused from an earlier layer</td><td>Fresh selection with new queries</td></tr><tr><td>Reuse</td><td>Reused from an earlier layer</td><td>Reused too, so no indexing work</td></tr></table>
+<p>Most layers are Reuse layers, so most layers add no new global KV to store. Every layer still keeps its own queries and its own sliding-window KV.</p>
+<p><strong>3. FP4 main KV cache.</strong> K/V values use the E2M1 format with one E4M3 scale per 16 channels. This nearly halves KV storage, both in HBM and on SSD. It was introduced through quantization-aware training in post-training. The sliding-window KV stays in FP8 because it is more sensitive to quantization. The paper reports only marginal quality loss.</p>
+<p><strong>4. SWA Bounded Replay.</strong> Sliding-window attention (SWA) keeps the last 128 tokens of state in every layer. Storing that on disk for every cached prefix is expensive. The alternative is to replay only the last 128 tokens through the model when a prefix-cache hit finds the global KV but not the window state.</p>
+<pre class="diagram">Prefix cache hit on global KV
+        ↓
+Window KV missing?
+        ↓
+Replay last 128 tokens only
+        ↓
+Rebuild window KV (approximate)
+        ↓
+Continue decoding</pre>
+<p>Rebuilding the window state exactly would need a much longer replay. Bounded replay accepts an approximate state to avoid that cost. The paper reports negligible quality impact. Storage is tiered: global KV stays on SSD, and window KV lives in a host-DRAM pool with a short, minute-scale lifetime.</p>
+<div class="case-chain">agentic input-heavy load → prefill compute + KV memory + KV storage pressure → share across layers + FP4 + tiered storage + bounded replay → smaller HBM and persistent cache, at the price of approximate window state and variable prefill latency</div>
+<table class="case-table"><tr><th>Metric</th><th>DeepSeek-V4-Flash</th><th>DeepSeek-V4.1-Flash</th></tr><tr><td>Global KV cache in HBM</td><td>About 4× larger</td><td><strong>890 bytes per token</strong></td></tr><tr><td>Persistent KV cache (SSD / host memory)</td><td>Baseline</td><td>About 1/8 of the baseline</td></tr><tr><td>Activated parameters</td><td>See paper</td><td>About 8B in prefill, 16B in decode</td></tr></table>
+<table class="case-table"><tr><th>Symptom</th><th>Root mechanism</th><th>What to measure</th></tr><tr><td>Agent requests have slow prefill.</td><td>The full model runs over every input token, including long tool outputs.</td><td>Prefill latency, prefix-cache hit rate, tokens per request.</td></tr><tr><td>Batch size is capped by GPU memory.</td><td>KV bytes per token are too large for the number of live sequences.</td><td>KV bytes per token, KV utilization, maximum concurrent sequences.</td></tr><tr><td>Cache storage is large or slow to reload.</td><td>Persistent KV includes state that could be rebuilt cheaply.</td><td>Persistent GB per session, cache-hit latency, replay latency.</td></tr></table>
+<div class="case-note"><span class="evidence">Generalizable engineering lesson:</span> KV cache is a budget with four levers: share it, shrink it, move it, or recompute it. Paging (vLLM) fixes how memory is laid out. This case shows that the amount of state and where it lives are also design choices.</div>
+<p><strong>Limits to keep in mind:</strong> the figures are reported by the vendor on its own model and workload and are not independently reproduced here. Bounded replay uses approximate state, and its cost changes with the cache hit pattern, so tail latency should be watched. Even at 890 bytes per token, a million-token context is still a large amount of state. FP4 storage needs quantization-aware training, so it is not a drop-in change for an existing model.</p>
+<p class="source-links"><a href="https://arxiv.org/abs/2609.19969" rel="noopener" target="_blank">DeepSeek-V4.1-Flash paper ↗</a> · <a href="https://huggingface.co/papers/2609.19969" rel="noopener" target="_blank">Hugging Face paper page ↗</a></p>
+<p class="case-fact"><strong>Editorial rule:</strong> system facts above come from the paper as read on 25 Sep 2026. The four-lever framing and the lesson are editorial synthesis, and this case study is an addition to the Markdown source.</p>
+</section>
+<div class="status"><strong>KV-cache trades repeated computation for persistent memory: it makes autoregressive generation much more efficient, but at production scale the cache itself becomes a state-management, memory-bandwidth, fragmentation, and scheduling problem.</strong></div>
+<div class="chapter-nav"><a href="mixture-of-experts.html">← Previous</a><a href="../index.html">Contents ↑</a><a href="quantization.html">Next →</a></div>
+</section>
+</main>
+</div>
+<footer><a href="../index.html">Contents</a> &middot; <a href="../assets/glossary.html">Glossary</a></footer>
+<script src="../assets/glossary.js"></script>
+</body></html>
