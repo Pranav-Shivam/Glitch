@@ -16,3 +16,6 @@ Local cache of internet research. Check here BEFORE searching the web. Save new 
 |---|---|---|
 | [dsa-company-interview-calibration-2026.md](dsa-company-interview-calibration-2026.md) | How Meta, Google, Amazon, Microsoft, Uber, X, Netflix, Anthropic, OpenAI, Stripe interview a 3–4 year engineer | 2026-10-04 |
 | [dsa-array-problem-frequency-2026.md](dsa-array-problem-frequency-2026.md) | Most-asked array problems at large tech companies, and what belongs to later topics | 2026-10-04 |
+| [dsa-sliding-window-problem-frequency-2026.md](dsa-sliding-window-problem-frequency-2026.md) | Most-asked sliding window problems at large tech companies | 2026-10-04 |
+| [dsa-stack-problem-frequency-20261004.md](dsa-stack-problem-frequency-20261004.md) | Most-asked stack problems at large tech companies | 2026-10-04 |
+| [dsa-two-pointers-problem-frequency-20261004-1.md](dsa-two-pointers-problem-frequency-20261004-1.md) | Most-asked two-pointers problems at large tech companies | 2026-10-04 |

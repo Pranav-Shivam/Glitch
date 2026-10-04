@@ -24,7 +24,7 @@ It holds three separate things that do not share code:
 ## `dsa/`
 
 - `dsa/das_prompt.md` is the master prompt for generating a topic's notes (14 teaching parts, a practice part, a practical build track, research-first problem selection, calibration for a 3–4 year engineer targeting large tech companies). Read it before generating or editing a topic.
-- Each topic is one self-contained notes page (`Arrays_Notes.html`, `Sliding_Window_Notes.html`, `Stack-Mastery-Notes.html`, `two-pointers-notes.html`). They link `dsa/assets/dsa.css` and `dsa/assets/dsa.js`. `Arrays_Notes_v2.html` is an experimental rebuild from the newer prompt and sits beside the original.
+- Each topic is one self-contained notes page (`Arrays_Notes_v3.html`, `two-pointers-notes_v2.html`, `Sliding_Window_Notes_v2.html`, `Stack-Mastery-Notes_v2.html`). They link `dsa/assets/dsa.css` and `dsa/assets/dsa.js`. These are the rebuilds from the current `das_prompt.md`; the earlier versions were removed (recoverable from git commit `83e2785`).
 - `dsa.js` expects `<body data-key="slug">` (used as the localStorage key for checklist ticks), one `.section` per tab with a matching `.nav-tab[data-tab]`, code blocks as paired `pre.pane[data-l="py"|"java"]`, and `#practice-mode` / `.reveal-btn` for Practice mode. Checklist inputs need unique `id`s.
 - Code in the notes must be verified. The convention is to run each optimal solution against a brute force on thousands of random inputs, in Python and in Java (a JDK is at `C:\Program Files\Java\jdk-27`). Do not claim a solution is correct without running it.
 
