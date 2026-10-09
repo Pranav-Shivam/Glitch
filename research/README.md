@@ -21,3 +21,4 @@ Local cache of internet research. Check here BEFORE searching the web. Save new 
 | [dsa-two-pointers-problem-frequency-20261004-1.md](dsa-two-pointers-problem-frequency-20261004-1.md) | Most-asked two-pointers problems at large tech companies | 2026-10-04 |
 | [dsa-hashing-problem-frequency-2026.md](dsa-hashing-problem-frequency-2026.md) | Most-asked hashing (hash map / set) problems at large tech companies | 2026-10-09 |
 | [dsa-java-collections-problem-frequency-20261009.md](dsa-java-collections-problem-frequency-20261009.md) | Collection-choice problems (PriorityQueue, TreeMap, ArrayDeque, LinkedHashMap, comparators) and recurring Java Collections interview questions | 2026-10-09 |
+| [dsa-queue-problem-frequency-20261010.md](dsa-queue-problem-frequency-20261010.md) | Queue / deque / BFS-with-queue problems and which belong to later topics | 2026-10-10 |
