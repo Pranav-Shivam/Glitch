@@ -19,3 +19,5 @@ Local cache of internet research. Check here BEFORE searching the web. Save new 
 | [dsa-sliding-window-problem-frequency-2026.md](dsa-sliding-window-problem-frequency-2026.md) | Most-asked sliding window problems at large tech companies | 2026-10-04 |
 | [dsa-stack-problem-frequency-20261004.md](dsa-stack-problem-frequency-20261004.md) | Most-asked stack problems at large tech companies | 2026-10-04 |
 | [dsa-two-pointers-problem-frequency-20261004-1.md](dsa-two-pointers-problem-frequency-20261004-1.md) | Most-asked two-pointers problems at large tech companies | 2026-10-04 |
+| [dsa-hashing-problem-frequency-2026.md](dsa-hashing-problem-frequency-2026.md) | Most-asked hashing (hash map / set) problems at large tech companies | 2026-10-09 |
+| [dsa-java-collections-problem-frequency-20261009.md](dsa-java-collections-problem-frequency-20261009.md) | Collection-choice problems (PriorityQueue, TreeMap, ArrayDeque, LinkedHashMap, comparators) and recurring Java Collections interview questions | 2026-10-09 |
