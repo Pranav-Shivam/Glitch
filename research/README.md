@@ -22,3 +22,4 @@ Local cache of internet research. Check here BEFORE searching the web. Save new 
 | [dsa-hashing-problem-frequency-2026.md](dsa-hashing-problem-frequency-2026.md) | Most-asked hashing (hash map / set) problems at large tech companies | 2026-10-09 |
 | [dsa-java-collections-problem-frequency-20261009.md](dsa-java-collections-problem-frequency-20261009.md) | Collection-choice problems (PriorityQueue, TreeMap, ArrayDeque, LinkedHashMap, comparators) and recurring Java Collections interview questions | 2026-10-09 |
 | [dsa-queue-problem-frequency-20261010.md](dsa-queue-problem-frequency-20261010.md) | Queue / deque / BFS-with-queue problems and which belong to later topics | 2026-10-10 |
+| [dsa-binary-search-problem-frequency-20261011.md](dsa-binary-search-problem-frequency-20261011.md) | Most-asked binary search problems at large tech companies (company-tagged frequency, Grind 75, patterns) | 2026-10-11 |
