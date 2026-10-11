@@ -2,7 +2,7 @@
 
 - **Retrieved:** 2026-10-04
 - **Question:** Which array problems are most commonly asked at Meta, Amazon, Google and similar companies?
-- **Used for:** the "How to choose the problems" rule in `dsa/das_prompt.md`, and the Arrays notes problem set.
+- **Used for:** the "How to choose the problems" rule in `dsa/dsa_prompt.md`, and the Arrays notes problem set.
 
 ## Problems that recurred across sources
 

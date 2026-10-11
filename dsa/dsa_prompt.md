@@ -5,7 +5,39 @@ I am preparing for technical interviews, and I want to master DSA **one topic at
 
 The DSA progression is:
 
-**Arrays → Hashing/Hash Maps → Two Pointers → Sliding Window → Stack → Binary Search → Linked List → Trees → Tries → Heaps → Backtracking → Graphs → Dynamic Programming**
+**Arrays → Hashing/Hash Maps → Two Pointers → Sliding Window → Stack (+ Queue/Deque companion) → Binary Search → Strings → Recursion → Linked List → Trees → Tries → Heaps → Intervals and Sorting → Backtracking → Graphs → Greedy → Dynamic Programming → Bit Manipulation and Math → Practical Build, Design and Concurrency → Mixed Review and Mocks**
+
+The Java Collections notes are an interlude (not a numbered topic) that supports Heaps, Intervals and the build track.
+
+### Roadmap (updated 2026-10-11; evidence in `research/dsa-roadmap-gaps-20261011.md`)
+
+| # | Topic | Why it is here |
+|---|---|---|
+| 1-6 | Arrays, Hashing, Two Pointers, Sliding Window, Stack (5b Queue/Deque), Binary Search | Done |
+| 7 | **Strings** | Tech Interview Handbook rates String "High"; Meta E4 reports lean on strings (parsing, palindromes, calculators, anagrams). Needs its own patterns: parsing, two-end checks, frequency maps, string building. |
+| 8 | **Recursion** | TIH "Mid". Prerequisite for Trees, Backtracking, Graph DFS and DP. Teach the call stack, base case, recursion tree, memo-ready thinking. |
+| 9 | Linked List | Pointers; LRU needs it later |
+| 10 | Trees | High frequency (Meta, Amazon); uses recursion |
+| 11 | Tries | Prefix problems; X and Meta mention them |
+| 12 | Heaps | Top-k, merge k lists, schedulers; builds on the Java Collections interlude |
+| 13 | **Intervals and Sorting** | NeetCode and Blind both have Intervals; Netflix reports interval merging; includes custom comparators and quickselect. Previously listed "outside the roadmap" with no home. |
+| 14 | Backtracking | Subsets, permutations, N-Queens; builds on recursion and trees |
+| 15 | **Graphs**, in sub-parts: 15a BFS/DFS and grid/matrix traversal, 15b topological sort, 15c Union-Find, 15d shortest paths (Dijkstra) | Graphs and DP are the most repeatedly reported topics at Google and Amazon. One topic would be too large. |
+| 16 | **Greedy** | In NeetCode (8) and Blind; no earlier topic owns it |
+| 17 | Dynamic Programming, in sub-parts: 17a 1-D, 17b 2-D / knapsack / strings, 17c other (interval DP, bitmask only if asked) | Top-weight at Google and Amazon; most skipped by candidates |
+| 18 | **Bit Manipulation and Math** | Short topic. NeetCode has 15 problems across Bit and Math & Geometry; low frequency, but cheap to cover. |
+| 19 | **Practical Build, Design and Concurrency** | Anthropic, OpenAI, Uber and Amazon SDE-2 reports: LRU/LFU, rate limiter, crawler, parking lot, thread-safe structures, locks and task queues |
+| 20 | **Mixed Review and Mocks** | Unlabelled mixed problems, timed no-run mocks, spaced review |
+
+Optional extras, only if a target company asks: segment tree / Fenwick tree, KMP / Rabin-Karp, computational geometry.
+
+### Roadmap rules
+
+- **Weight depends on company.** TIH rates DP "Low" while Google and Amazon reports rate it high. State the weight for my targets in every topic (Part 1 already asks for this).
+- **Master deferral list.** Keep problems deferred from an earlier topic ("Two Sum -> Hashing", "3Sum -> Two Pointers", "Search in Rotated Array -> Binary Search") in `research/` or a notes appendix, and when a topic is written, check that its deferred problems land there.
+- **Spaced review.** The "no artificial backlog" rule still holds (Teaching Rule 10). But at the start of each new topic, add a 5-problem "Revisit" block of earlier-topic problems (no calendar dates), so older patterns resurface.
+- **Mixed practice.** From topic 10 onward, at least one problem per practice set should not name its pattern in the heading.
+- **Part 15 gaps.** Where a topic has no natural build exercise (Tries, Backtracking, Greedy), point to topic 19 and say which exercise there will use it.
 
 ## My Current Topic
 
@@ -544,7 +576,8 @@ The page must have:
 3. **Check coverage against the research** (Part 7 rules): every pattern covered, frequently asked problems either solved, deferred to a later topic, or listed as outside the roadmap.
 4. **Compare with any existing notes for the same topic** and report differences honestly: what the new version adds, what it lacks, and which is better where.
 5. **Check the claims** in the notes (complexities, "this is a common bug", interview statistics) against what was verified or researched.
-6. **Final message**: say what was verified, what was not, and what remains weak.
+6. **Update the landing page**: add a card and a roadmap row for the topic in `dsa.html`, and update the "Ready: N of M topics" badge and the roadmap heading count.
+7. **Final message**: say what was verified, what was not, and what remains weak.
 
 Teach the concepts in chat as well, one part at a time if the topic is large, and pause when I need to confirm understanding before continuing.
 

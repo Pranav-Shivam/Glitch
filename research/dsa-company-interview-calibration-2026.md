@@ -2,7 +2,7 @@
 
 - **Retrieved:** 2026-10-04
 - **Question:** What do Meta, Amazon, Netflix, Google, Anthropic, OpenAI, X (Twitter) and other multinationals ask a candidate with 3–4 years of experience?
-- **Used for:** the "Calibration" section of `dsa/das_prompt.md`.
+- **Used for:** the "Calibration" section of `dsa/dsa_prompt.md`.
 
 ## Summary
 
