@@ -1,0 +1,6 @@
+K1 Python: 2000 slices of 1000000 chars each (s[1:]): 0.511s
+K1 Python: 2000 slices of 4000000 chars each (s[1:]): 3.340s
+K2 Python: hash of a 5,000,000-char string, first call 0.768 ms, second call 0.0006 ms
+K3 Python: ('a'*50000+'b') in ('a'*100000): 0.0005s (a naive search would do about 2.5e9 comparisons)
+K3b Python: short needle ('a'*20+'b') in ('a'*100000): 0.0004s
+K4 Python list insert(0) x100000: 0.894s ; append x100000: 0.002s

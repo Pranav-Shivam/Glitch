@@ -1,0 +1,12 @@
+C1 split(' ') keeps empty strings: 'b  a' (correct: 'b a')
+C3 abbr without zero check: vwa_bad('a','01') = True (correct: False)
+C4 add without final carry: add_bad('99','1') = 00 (correct: '100')
+C5 multiply without stripping zeros: mul_bad('2','3') = 06 (correct: '6')
+C6 shift key without %26: 'az' vs 'ba' keys equal? False (0, 25) (0, -1) | with %26: True
+C7 compress count in one slot: comp_bad(list('a'*12)) = 2 (correct: 3, i.e. 'a12')
+C8 odd centres only: lps_odd('abba') = 'a' (correct: 'abba')
+C9 '²'.isdigit() = True but int('²') raises ValueError
+C11a Python: s += 'x' x200000: 0.009s ; list+join: 0.004s (CPython can optimise += when nothing else references s; do not rely on it)
+C11b Python: s += 'x' x50000 while another reference to s exists: 0.870s
+C11c Python: `s = s[1:]` loop on 100000 chars: 0.953s ; index loop: 0.002s
+C12 worst case h='a'*10000, needle='a'*4999+'b': brute char comparisons 25005000 ; KMP comparisons 24998

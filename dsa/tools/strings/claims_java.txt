@@ -1,0 +1,7 @@
+J1 atoi without pre-check: atoiBad("2147483648") = -2147483648 (correct: 2147483647)
+J2 new String("ab") == "ab": false ; equals: true
+J3 " a b".split("\s+").length = 3 first=[] (correct: 2 words)
+J4 'a' + 1 + "" = "98" ; "" + 'a' + 1 = "a1" ; (char)(c + 1) = b
+J5 Character.isDigit('٣') = true ; '٣' - '0' = 1587
+J6 Java: s += "x" x100000: 0.690s ; StringBuilder: 0.002s
+J7 "a,b,,".split(",").length = 2 ; split(",", -1).length = 4
